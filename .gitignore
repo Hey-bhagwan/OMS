@@ -1,0 +1,54 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+.yarn/cache
+
+# Next.js build output
+/.next/
+/out/
+
+# Production build artifacts
+/build
+/dist
+
+# Environment variables
+.env
+.env*.local
+.env.development
+.env.test
+.env.production
+!.env.example
+
+# Debug and system logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Prisma generated artifacts & local SQLite if any
+/prisma/*.db
+/prisma/*.db-journal
+
+# Testing & coverage
+/coverage
+/.nyc_output
+
+# Operating system files
+.DS_Store
+*.pem
+Thumbs.db
+
+# IDE and Editor directories
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Temporary and scratch files
+/scripts/test_*.js
+/tmp/

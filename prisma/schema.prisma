@@ -1,0 +1,553 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  OPERATIONS_MANAGER
+  INVENTORY_MANAGER
+  PRODUCTION_STAFF
+  PACKING_STAFF
+  DISPATCH_STAFF
+  AUDITOR
+}
+
+enum InternalStage {
+  RAW_MATERIAL
+  PRODUCTION
+  PACKING
+  DISPATCH
+  DELIVERY
+  ON_HOLD
+  CANCELLED
+  DELIVERY_EXCEPTION
+  RTO
+  RETURNED
+  MANUAL_REVIEW
+}
+
+enum PackagingType {
+  DOMESTIC
+  EXPORT
+}
+
+enum InventoryBucket {
+  UNPACKED
+  PACKED
+  RAW_MATERIAL
+}
+
+enum TransactionType {
+  OPENING_BALANCE
+  RECEIPT
+  RESERVATION
+  RESERVATION_RELEASE
+  PRODUCTION_CONSUMPTION
+  PRODUCTION_OUTPUT
+  PACKING_TRANSFER
+  DISPATCH_ALLOCATION
+  ADJUSTMENT
+  RETURN_RECEIPT
+  DAMAGE_WRITEOFF
+}
+
+enum ReservationStatus {
+  RESERVED
+  RELEASED
+  CONSUMED
+  CANCELLED
+}
+
+enum ProductionStatus {
+  PENDING_MATERIAL
+  READY
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum PackingStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum NormalizedShipmentStatus {
+  SHIPMENT_CREATED
+  READY_FOR_PICKUP
+  PICKED_UP
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  DELIVERY_EXCEPTION
+  UNDELIVERED
+  RTO
+  RETURNED
+  CANCELLED
+  UNKNOWN
+}
+
+enum ShipmentProvider {
+  SHIPROCKET
+  SHIPROCKET_CARGO
+  MANUAL
+  UNIWARE
+}
+
+enum SyncStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum RawMaterialBlockStatus {
+  BLOCKED
+  PENDING_ASSESSMENT
+  RESOLVED
+  CANCELLED
+}
+
+model User {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  name         String
+  passwordHash String
+  role         Role          @default(OPERATIONS_MANAGER)
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  assignedOrders   Order[]            @relation("AssignedOrders")
+  assignedProd     ProductionOrder[]  @relation("AssignedProduction")
+  assignedPacking  PackingTask[]      @relation("AssignedPacking")
+  assignedBlocks   RawMaterialBlock[] @relation("AssignedRawMaterialBlocks")
+  remarks          OrderRemark[]
+  auditLogs        AuditLog[]
+}
+
+model SKU {
+  id                      String               @id @default(uuid())
+  code                    String               @unique // e.g. KLT2025-004
+  name                    String
+  description             String?
+  category                String?
+  unitOfManufacture       String               @default("PCS")
+  defaultLeadTimeDays     Int                  @default(7)
+  unitPrice               Decimal              @default(0.0) @db.Decimal(12, 2)
+  currency                String               @default("INR")
+  domesticPackingType     String               @default("Standard Box")
+  exportPackingType       String               @default("Export Palletized Wooden Crate")
+  requiresSpecialHandling Boolean              @default(false)
+  productionNotes         String?
+  qualityRequirements     String?
+  isActive                Boolean              @default(true)
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+
+  finishedStock       FinishedGoodsStock[]
+  orderLines          OrderLine[]
+  productionOrders    ProductionOrder[]
+  packingTasks        PackingTask[]
+  reservations        InventoryReservation[]
+  transactions        InventoryTransaction[]
+  rawMaterialBlocks   RawMaterialBlock[]
+}
+
+model RawMaterialBlock {
+  id               String                 @id @default(uuid())
+  orderId          String
+  orderLineId      String
+  skuId            String
+  blockedQuantity  Int                    @default(0)
+  releasedQuantity Int                    @default(0)
+  status           RawMaterialBlockStatus @default(BLOCKED)
+  reason           String
+  assignedUserId   String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  resolvedAt       DateTime?
+
+  order            Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderLine        OrderLine              @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  sku              SKU                    @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  assignedUser     User?                  @relation("AssignedRawMaterialBlocks", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  remarks          OrderRemark[]
+
+  @@index([orderId])
+  @@index([orderLineId])
+  @@index([skuId])
+  @@index([status])
+  @@index([assignedUserId])
+}
+
+model OrderRemark {
+  id                 String            @id @default(uuid())
+  orderId            String?
+  orderLineId        String?
+  rawMaterialBlockId String?
+  productionOrderId  String?
+  packingTaskId      String?
+  shipmentId         String?
+  stage              String?
+  quantity           Int?
+  text               String
+  authorName         String
+  authorEmail        String?
+  authorId           String?
+  createdAt          DateTime          @default(now())
+
+  order              Order?            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  rawMaterialBlock   RawMaterialBlock? @relation(fields: [rawMaterialBlockId], references: [id], onDelete: Cascade)
+  productionOrder    ProductionOrder?  @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  packingTask        PackingTask?      @relation(fields: [packingTaskId], references: [id], onDelete: Cascade)
+  shipment           Shipment?         @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  user               User?             @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([rawMaterialBlockId])
+  @@index([productionOrderId])
+  @@index([packingTaskId])
+  @@index([shipmentId])
+  @@index([createdAt])
+}
+
+model WorkflowDecision {
+  id                 String   @id @default(uuid())
+  orderId            String
+  recommendedAction  String
+  blockerReason      String?
+  decisionReason     String
+  ruleVersion        String   @default("2.0")
+  relevantQuantities String?  // JSON snapshot of quantities
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  order              Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+model WorkflowConfiguration {
+  id                   String        @id @default(uuid())
+  stage                InternalStage @unique
+  slaHours             Int           @default(24)
+  priorityWeight       Int           @default(10)
+  requiresSpecialCheck Boolean       @default(false)
+  updatedAt            DateTime      @updatedAt
+}
+
+model FinishedGoodsStock {
+  id                String          @id @default(uuid())
+  skuId             String
+  bucket            InventoryBucket // UNPACKED or PACKED
+  quantityOnHand    Int             @default(0)
+  quantityReserved  Int             @default(0)
+  quantityAvailable Int             @default(0)
+  binLocation       String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  sku               SKU             @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@unique([skuId, bucket])
+}
+
+model InventoryTransaction {
+  id              String          @id @default(uuid())
+  skuId           String?
+  rawMaterialId   String?
+  bucket          InventoryBucket
+  quantityChange  Decimal         @db.Decimal(12, 2)
+  type            TransactionType
+  referenceType   String?         // ORDER, PRODUCTION, MANUAL, RETURN
+  referenceId     String?
+  reason          String
+  actorId         String?
+  idempotencyKey  String?         @unique
+  timestamp       DateTime        @default(now())
+
+  sku             SKU?            @relation(fields: [skuId], references: [id], onDelete: SetNull)
+
+  @@index([skuId, bucket])
+  @@index([timestamp])
+}
+
+model InventoryReservation {
+  id              String            @id @default(uuid())
+  skuId           String
+  orderLineId     String
+  bucket          InventoryBucket   // PACKED or UNPACKED
+  quantity        Int
+  status          ReservationStatus @default(RESERVED)
+  idempotencyKey  String?           @unique
+  createdAt       DateTime          @default(now())
+  releasedAt      DateTime?
+  consumedAt      DateTime?
+
+  sku             SKU               @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  orderLine       OrderLine         @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+
+  @@index([skuId, status])
+  @@index([orderLineId])
+}
+
+model Order {
+  id                  String               @id @default(uuid())
+  uniwareOrderCode    String               @unique // Uniware sale order code (e.g. IK9259)
+  displayOrderCode    String?              // Marketplace order ID (e.g. 405-1234567-890)
+  channel             String               @default("CUSTOM") // Amazon, Shopify, Wholesale
+  source              String               @default("UNIWARE")
+  uniwareStatus       String               @default("PROCESSING") // Raw status from Uniware
+  internalStage       InternalStage        @default(RAW_MATERIAL)
+  packagingType       PackagingType        @default(DOMESTIC)
+  destinationCountry  String               @default("IN")
+  shippingAddressCity String?
+  shippingAddressState String?
+  currency            String               @default("INR")
+  totalAmount         Decimal              @default(0.0) @db.Decimal(12, 2)
+  isCod               Boolean              @default(false)
+  displayOrderDateTime DateTime?
+  fulfillmentDeadline DateTime?
+  priorityScore       Int                  @default(50)
+  priorityLabel       String               @default("NORMAL") // LOW, NORMAL, HIGH, URGENT, OVERDUE
+  blockerReason       String?
+  nextAction          String?
+  staffRemark         String?
+  rawMaterialDecision String?              // AVAILABLE, UNAVAILABLE, PENDING_ASSESSMENT
+  assignedUserId      String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  assignedUser        User?                @relation("AssignedOrders", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  lines               OrderLine[]
+  stageHistory        OrderStatusHistory[]
+  packingTasks        PackingTask[]
+  shipments           Shipment[]
+  rawMaterialBlocks   RawMaterialBlock[]
+  remarks             OrderRemark[]
+  workflowDecisions   WorkflowDecision[]
+
+  @@index([uniwareOrderCode])
+  @@index([internalStage])
+  @@index([channel])
+  @@index([fulfillmentDeadline])
+}
+
+model OrderLine {
+  id                     String                 @id @default(uuid())
+  orderId                String
+  skuId                  String
+  uniwareItemCode        String?
+  quantity               Int                    @default(1)
+  unitPrice              Decimal                @default(0.0) @db.Decimal(12, 2)
+  status                 String                 @default("CREATED")
+  allocatedPackedQty     Int                    @default(0)
+  allocatedUnpackedQty   Int                    @default(0)
+  requiredProductionQty  Int                    @default(0)
+  requiredRawMaterialQty Int                    @default(0)
+  blockedRawMaterialQty  Int                    @default(0)
+  pendingAssessmentQty   Int                    @default(0)
+  packedCompletedQty     Int                    @default(0)
+  dispatchReadyQty       Int                    @default(0)
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+
+  order                  Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sku                    SKU                    @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  reservations           InventoryReservation[]
+  productionOrders       ProductionOrder[]
+  packingTasks           PackingTask[]
+  rawMaterialBlocks      RawMaterialBlock[]
+
+  @@index([orderId])
+  @@index([skuId])
+}
+
+model OrderStatusHistory {
+  id              String        @id @default(uuid())
+  orderId         String
+  fromStage       InternalStage?
+  toStage         InternalStage
+  reason          String?
+  changedByUserId String?
+  timestamp       DateTime      @default(now())
+  metadata        String?       // JSON metadata
+
+  order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, timestamp])
+}
+
+model ProductionOrder {
+  id                     String                  @id @default(uuid())
+  code                   String                  @unique // e.g. PROD-2026-001
+  skuId                  String
+  orderLineId            String?
+  quantityRequired       Int
+  quantityCompleted      Int                     @default(0)
+  quantityRejected       Int                     @default(0)
+  status                 ProductionStatus        @default(READY)
+  assignedUserId         String?
+  startDate              DateTime?
+  expectedCompletionDate DateTime?
+  actualCompletionDate   DateTime?
+  notes                  String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  sku                    SKU                     @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  orderLine              OrderLine?              @relation(fields: [orderLineId], references: [id], onDelete: SetNull)
+  assignedUser           User?                   @relation("AssignedProduction", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  remarks                OrderRemark[]
+
+  @@index([skuId, status])
+  @@index([orderLineId])
+}
+
+model PackingTask {
+  id                  String        @id @default(uuid())
+  code                String        @unique // e.g. PACK-2026-001
+  orderId             String
+  orderLineId         String
+  skuId               String
+  quantityRequired    Int
+  quantityCompleted   Int           @default(0)
+  packagingType       PackagingType @default(DOMESTIC)
+  specialInstructions String?
+  status              PackingStatus @default(PENDING)
+  assignedUserId      String?
+  completedAt         DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  order               Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderLine           OrderLine     @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  sku                 SKU           @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  assignedUser        User?         @relation("AssignedPacking", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  remarks             OrderRemark[]
+
+  @@index([orderId])
+  @@index([status])
+}
+
+model Shipment {
+  id                   String                   @id @default(uuid())
+  orderId              String?                  // Nullable if received from webhook before order matching
+  uniwareOrderCode     String?
+  provider             ShipmentProvider
+  providerShipmentId   String?                  // Provider's shipment id
+  providerOrderId      String?                  // Provider's order id
+  awbWaybill           String                   // AWB or Cargo waybill number
+  courierName          String                   @default("Shiprocket")
+  normalizedStatus     NormalizedShipmentStatus @default(SHIPMENT_CREATED)
+  providerStatus       String?
+  currentScanLocation  String?
+  currentScanActivity  String?
+  etdDate              DateTime?
+  dispatchedAt         DateTime?
+  deliveredAt          DateTime?
+  isUnmatched          Boolean                  @default(false)
+  matchConfidence      String?                  // EXACT_AWB, ORDER_CODE, MANUAL_OVERRIDE
+  failureReason        String?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  order                Order?                   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  events               ShipmentEvent[]
+  remarks              OrderRemark[]
+
+  @@unique([provider, awbWaybill])
+  @@index([orderId])
+  @@index([awbWaybill])
+  @@index([normalizedStatus])
+  @@index([isUnmatched])
+}
+
+model ShipmentEvent {
+  id             String           @id @default(uuid())
+  shipmentId     String?
+  provider       ShipmentProvider
+  awbWaybill     String
+  providerStatus String?
+  activity       String?
+  location       String?
+  eventTimestamp DateTime
+  rawPayloadJson String?          // Full raw provider payload
+  receivedAt     DateTime         @default(now())
+  idempotencyKey String?          @unique
+
+  shipment       Shipment?        @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([awbWaybill])
+  @@index([eventTimestamp])
+}
+
+model IntegrationCheckpoint {
+  id                  String     @id @default(uuid())
+  provider            String     @unique // UNIWARE, SHIPROCKET, SHIPROCKET_CARGO
+  lastCheckpointValue String?    // Last sync timestamp or page token
+  lastRunAt           DateTime?
+  lastSuccessAt       DateTime?
+  status              SyncStatus @default(SUCCESS)
+  failureCount        Int        @default(0)
+  lastError           String?
+  updatedAt           DateTime   @updatedAt
+}
+
+model IntegrationSyncRun {
+  id              String     @id @default(uuid())
+  provider        String     // UNIWARE, SHIPROCKET
+  syncType        String     // INITIAL, INCREMENTAL_POLL, MANUAL_TRIGGER
+  startedAt       DateTime   @default(now())
+  completedAt     DateTime?
+  status          SyncStatus @default(RUNNING)
+  recordsFetched  Int        @default(0)
+  recordsUpserted Int        @default(0)
+  recordsFailed   Int        @default(0)
+  errorMessage    String?
+  logsJson        String?
+}
+
+model WebhookReceipt {
+  id             String   @id @default(uuid())
+  provider       String   // SHIPROCKET, SHIPROCKET_CARGO
+  eventType      String?
+  idempotencyKey String?  @unique
+  payloadJson    String
+  status         String   @default("PROCESSED") // PROCESSED, FAILED, UNMATCHED
+  errorMessage   String?
+  receivedAt     DateTime @default(now())
+
+  @@index([provider, receivedAt])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  entityType  String   // ORDER, INVENTORY, PRODUCTION, PACKING, SHIPMENT, USER, CONFIG, PRODUCT
+  entityId    String
+  action      String   // CREATE, UPDATE, DELETE, ALLOCATE, STAGE_TRANSITION, RECONCILE, RM_DECISION
+  actorId     String?
+  actorEmail  String?
+  changesJson String?
+  timestamp   DateTime @default(now())
+
+  user        User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([timestamp])
+}
+
+model SystemSetting {
+  key         String   @id
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+}
