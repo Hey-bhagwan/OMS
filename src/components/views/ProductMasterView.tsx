@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { Download, Printer, Plus, Edit2, Search, CheckCircle2, AlertCircle, X, Shield, RefreshCw } from "lucide-react";
-import { formatCurrency, formatShortDate } from "@/lib/utils";
+import { formatShortDate } from "@/lib/utils";
 
 export const ProductMasterView: React.FC<{ searchFilter?: string }> = ({ searchFilter }) => {
   const [products, setProducts] = useState<any[]>([]);

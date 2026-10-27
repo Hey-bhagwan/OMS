@@ -81,13 +81,23 @@ export const SettingsView: React.FC = () => {
       <div className="bg-white p-5 rounded-lg border border-stone-200 shadow-sm space-y-4">
         <div className="flex items-center justify-between border-b border-stone-200 pb-3">
           <div className="flex items-center space-x-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            <span className={`w-2.5 h-2.5 rounded-full ${uni.usernameConfigured ? "bg-emerald-500" : "bg-amber-500"}`}></span>
             <h4 className="text-sm font-bold text-stone-900">Uniware Omnichannel Connector</h4>
           </div>
-          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-            {uni.status}
+          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${uni.status === "SUCCESS" ? "bg-emerald-100 text-emerald-800" : uni.status === "FAILED" ? "bg-red-100 text-red-800" : "bg-stone-100 text-stone-700"}`}>
+            {uni.status || "NOT_SYNCED"}
           </span>
         </div>
+
+        {!uni.usernameConfigured && (
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 space-y-1">
+            <div className="font-bold flex items-center space-x-1">
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span>Credentials Not Configured</span>
+            </div>
+            <p>Set <code className="bg-amber-100 px-1 rounded">UNIWARE_AUTH_TOKEN</code> (paste Bearer token from Postman) or <code className="bg-amber-100 px-1 rounded">UNIWARE_USERNAME</code> + <code className="bg-amber-100 px-1 rounded">UNIWARE_PASSWORD</code> in your <code className="bg-amber-100 px-1 rounded">.env</code> file, then restart the server.</p>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
           <div className="p-2.5 bg-stone-50 rounded border border-stone-200">
@@ -95,20 +105,35 @@ export const SettingsView: React.FC = () => {
             <span className="font-mono font-medium text-stone-800 truncate block">{uni.baseUrl}</span>
           </div>
           <div className="p-2.5 bg-stone-50 rounded border border-stone-200">
+            <span className="text-[10px] text-stone-500 block">Auth Mode</span>
+            <span className="font-medium text-stone-800">{uni.authMode || "OAUTH"}</span>
+          </div>
+          <div className="p-2.5 bg-stone-50 rounded border border-stone-200">
+            <span className="text-[10px] text-stone-500 block">Sync From Date</span>
+            <span className="font-medium text-stone-800">{uni.fromDate || `Last ${uni.lookbackDays} days`}</span>
+          </div>
+          <div className="p-2.5 bg-stone-50 rounded border border-stone-200">
+            <span className="text-[10px] text-stone-500 block">Page Size</span>
+            <span className="font-medium text-stone-800">{uni.pageSize} orders / page</span>
+          </div>
+          <div className="p-2.5 bg-stone-50 rounded border border-stone-200">
             <span className="text-[10px] text-stone-500 block">Polling Schedule</span>
             <span className="font-medium text-stone-800">{uni.syncIntervalSeconds}s interval</span>
           </div>
           <div className="p-2.5 bg-stone-50 rounded border border-stone-200">
             <span className="text-[10px] text-stone-500 block">Last Checkpoint</span>
-            <span className="font-medium text-stone-800">{formatDate(uni.lastSuccessAt)}</span>
+            <span className="font-medium text-stone-800">{formatDate(uni.lastSuccessAt) || "Never"}</span>
           </div>
           <div className="p-2.5 bg-stone-50 rounded border border-stone-200">
-            <span className="text-[10px] text-stone-500 block">Authentication</span>
-            <span className="font-medium text-emerald-700 flex items-center space-x-1">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>OAuth Token Cached</span>
-            </span>
+            <span className="text-[10px] text-stone-500 block">Failure Count</span>
+            <span className={`font-bold ${uni.failureCount > 0 ? "text-red-700" : "text-emerald-700"}`}>{uni.failureCount}</span>
           </div>
+          {uni.lastError && (
+            <div className="p-2.5 bg-red-50 rounded border border-red-200 col-span-2">
+              <span className="text-[10px] text-red-600 block font-semibold">Last Error</span>
+              <span className="text-red-800 break-words">{uni.lastError}</span>
+            </div>
+          )}
         </div>
       </div>
 

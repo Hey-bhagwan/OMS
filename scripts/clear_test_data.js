@@ -1,82 +1,98 @@
+
 const { PrismaClient } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
 async function clearTestData() {
   console.log("==================================================");
-  console.log("    Koa Living OMS — Purging Test Orders Data     ");
+  console.log("      KOA LIVING OMS - COMPLETE TEST RESET       ");
   console.log("==================================================");
 
   try {
-    const deletedCounts = await prisma.$transaction(async (tx) => {
-      // 1. Delete dependent child records
-      const remarks = await tx.orderRemark.deleteMany({});
-      const rawBlocks = await tx.rawMaterialBlock.deleteMany({});
-      const packingTasks = await tx.packingTask.deleteMany({});
-      const prodOrders = await tx.productionOrder.deleteMany({});
-      const reservations = await tx.inventoryReservation.deleteMany({});
-      const stageHistory = await tx.orderStatusHistory.deleteMany({});
-      const shipmentEvents = await tx.shipmentEvent.deleteMany({});
-      const shipments = await tx.shipment.deleteMany({});
-      const workflowDecisions = await tx.workflowDecision.deleteMany({});
-      const orderLines = await tx.orderLine.deleteMany({});
-      const orders = await tx.order.deleteMany({});
-      const webhookReceipts = await tx.webhookReceipt.deleteMany({});
-      const syncRuns = await tx.integrationSyncRun.deleteMany({});
-      const checkpoints = await tx.integrationCheckpoint.deleteMany({});
-      const transactions = await tx.inventoryTransaction.deleteMany({});
+    if (process.env.CONFIRM_PURGE_TEST_DATA !== "YES") {
+      throw new Error(
+        "Cancelled. Set CONFIRM_PURGE_TEST_DATA=YES to proceed."
+      );
+    }
 
-      // 2. Reset Finished Goods stock reservations to 0 and available = onHand
-      const stocks = await tx.finishedGoodsStock.findMany();
-      for (const s of stocks) {
-        await tx.finishedGoodsStock.update({
-          where: { id: s.id },
-          data: {
-            quantityReserved: 0,
-            quantityAvailable: s.quantityOnHand,
-          },
-        });
-      }
+    // Keep user accounts and configuration/settings.
+    // Delete operational/test data, including audit logs.
+    const preserveModels = new Set([
+      "User",
+      "Role",
+      "Permission",
+      "Configuration",
+      "SystemConfig",
+      "AppSetting",
+    ]);
 
-      return {
-        orders: orders.count,
-        orderLines: orderLines.count,
-        rawBlocks: rawBlocks.count,
-        prodOrders: prodOrders.count,
-        packingTasks: packingTasks.count,
-        shipments: shipments.count,
-        remarks: remarks.count,
-        stageHistory: stageHistory.count,
-        reservations: reservations.count,
-        workflowDecisions: workflowDecisions.count,
-        syncRuns: syncRuns.count,
-        checkpoints: checkpoints.count,
-      };
-    });
+    const models = Object.keys(prisma)
+      .filter((key) => {
+        if (key.startsWith("$") || key.startsWith("_")) return false;
+        const delegate = prisma[key];
+        return delegate && typeof delegate.deleteMany === "function";
+      })
+      .filter((key) => {
+        const modelName = key.charAt(0).toUpperCase() + key.slice(1);
+        return !preserveModels.has(modelName);
+      });
 
-    console.log("\nPurge completed successfully!");
-    console.log(`• Orders deleted:              ${deletedCounts.orders}`);
-    console.log(`• Order Lines deleted:        ${deletedCounts.orderLines}`);
-    console.log(`• Raw Material Blocks deleted:${deletedCounts.rawBlocks}`);
-    console.log(`• Production Orders deleted:  ${deletedCounts.prodOrders}`);
-    console.log(`• Packing Tasks deleted:      ${deletedCounts.packingTasks}`);
-    console.log(`• Shipments deleted:          ${deletedCounts.shipments}`);
-    console.log(`• Remarks deleted:            ${deletedCounts.remarks}`);
-    console.log(`• Stage History deleted:      ${deletedCounts.stageHistory}`);
-    console.log(`• Checkpoints & Syncs reset:  ${deletedCounts.checkpoints + deletedCounts.syncRuns}`);
-    console.log("• Finished goods stock reservations reset to 0.");
-    console.log("• User accounts, SKUs catalog, and configurations PRESERVED.\n");
+    console.log("Models selected for deletion:", models);
 
-    // Verify remaining count
-    const remainingOrders = await prisma.order.count();
-    const remainingUsers = await prisma.user.count();
-    const remainingSkus = await prisma.sKU.count();
-    console.log(`Current DB Status: ${remainingOrders} orders, ${remainingSkus} SKUs, ${remainingUsers} users.\n`);
+    await prisma.$transaction(
+      async (tx) => {
+        const remaining = new Set(models);
+        const deletedCounts = {};
 
-    process.exit(0);
-  } catch (err) {
-    console.error("Purge failed:", err.message);
-    process.exit(1);
+        // Delete in passes so dependent records can be removed first.
+        // Database foreign-key constraints remain the final safeguard.
+        let progress = true;
+
+        while (remaining.size > 0 && progress) {
+          progress = false;
+
+          for (const model of [...remaining]) {
+            try {
+              const result = await tx[model].deleteMany({});
+              deletedCounts[model] = result.count;
+              remaining.delete(model);
+              progress = true;
+            } catch (error) {
+              // Defer this model until its dependent records are removed.
+              // Prisma transaction errors may abort the transaction, so
+              // unresolved relations should be handled explicitly instead.
+              throw new Error(
+                `Could not delete model "${model}". ` +
+                `Check its foreign-key dependencies. ` +
+                `${error instanceof Error ? error.message : String(error)}`
+              );
+            }
+          }
+        }
+
+        if (remaining.size > 0) {
+          throw new Error(
+            `Could not delete models: ${[...remaining].join(", ")}`
+          );
+        }
+
+        console.log("Deleted record counts:", deletedCounts);
+      },
+      { timeout: 120000 }
+    );
+
+    console.log("\nTest database reset completed.");
+    console.log("User accounts and selected configuration models were preserved.");
+    console.log("Audit logs and operational records were deleted.");
+
+  } catch (error) {
+    console.error(
+      "\nReset failed:",
+      error instanceof Error ? error.message : String(error)
+    );
+    process.exitCode = 1;
+  } finally {
+    await prisma.$disconnect();
   }
 }
 

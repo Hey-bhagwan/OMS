@@ -1,6 +1,7 @@
 import { prisma } from "../../db/prisma";
 import { uniwareClient } from "./client";
 import { workflowService } from "../../services/workflow.service";
+import { SyncStatus } from "@prisma/client";
 
 export interface SyncRunResult {
   syncRunId: string;
@@ -11,12 +12,33 @@ export interface SyncRunResult {
   errorMessage?: string;
 }
 
+type InternalStage =
+  | "DELIVERY"
+  | "CANCELLED"
+  | "PRODUCTION"
+  | "RAW_MATERIAL";
+
+type SyncDateType = "CREATED" | "UPDATED";
+
 export class UniwareSyncService {
   /**
-   * Run synchronization pass against Uniware
+   * Run a Uniware sync.
+   *
+   * Manual CREATED sync:
+   *   executeSync("MANUAL_TRIGGER", "CREATED")
+   *
+   * Manual UPDATED sync:
+   *   executeSync("MANUAL_TRIGGER", "UPDATED")
+   *
+   * CREATED sync also checks whether orders already exist in our database.
+   * Existing orders are updated rather than duplicated.
    */
-  public async executeSync(syncType: "INITIAL" | "INCREMENTAL_POLL" | "MANUAL_TRIGGER"): Promise<SyncRunResult> {
+  public async executeSync(
+    syncType: "INITIAL" | "INCREMENTAL_POLL" | "MANUAL_TRIGGER",
+    dateTypeOverride?: SyncDateType,
+  ): Promise<SyncRunResult> {
     const startedAt = new Date();
+
     const syncRun = await prisma.integrationSyncRun.create({
       data: {
         provider: "UNIWARE",
@@ -31,27 +53,95 @@ export class UniwareSyncService {
     let recordsFailed = 0;
 
     try {
-      // 1. Fetch current checkpoint
-      const checkpoint = await prisma.integrationCheckpoint.findUnique({
-        where: { provider: "UNIWARE" },
-      });
+      const checkpoint =
+        await prisma.integrationCheckpoint.findUnique({
+          where: { provider: "UNIWARE" },
+        });
 
-      const pageSize = parseInt(process.env.UNIWARE_PAGE_SIZE || "10", 10);
-      const lookbackDays = parseInt(process.env.UNIWARE_INITIAL_LOOKBACK_DAYS || "7", 10);
+      const configuredPageSize = Number.parseInt(
+        process.env.UNIWARE_PAGE_SIZE || "50",
+        10,
+      );
+
+      const pageSize =
+        Number.isFinite(configuredPageSize) && configuredPageSize > 0
+          ? configuredPageSize
+          : 50;
+
+      const configuredLookback = Number.parseInt(
+        process.env.UNIWARE_INITIAL_LOOKBACK_DAYS || "60",
+        10,
+      );
+
+      const lookbackDays =
+        Number.isFinite(configuredLookback) && configuredLookback > 0
+          ? configuredLookback
+          : 60;
+
+      const dateType: SyncDateType =
+        dateTypeOverride ||
+        (syncType === "INITIAL" ? "CREATED" : "UPDATED");
 
       const toDate = new Date();
       let fromDate: Date;
 
-      if (!checkpoint?.lastCheckpointValue || syncType === "INITIAL") {
-        fromDate = new Date(toDate.getTime() - lookbackDays * 24 * 3600 * 1000);
+      if (process.env.UNIWARE_FROM_DATE) {
+        const configuredDate = new Date(
+          process.env.UNIWARE_FROM_DATE,
+        );
+
+        if (Number.isNaN(configuredDate.getTime())) {
+          throw new Error(
+            "UNIWARE_FROM_DATE is not a valid date",
+          );
+        }
+
+        fromDate = configuredDate;
+      } else if (
+        dateType === "CREATED" ||
+        !checkpoint?.lastCheckpointValue
+      ) {
+        // CREATED sync uses a lookback window.
+        // It does not depend on the UPDATED checkpoint.
+        fromDate = new Date(
+          toDate.getTime() -
+            lookbackDays * 24 * 60 * 60 * 1000,
+        );
       } else {
-        // Use overlapping 15-minute window before the last checkpoint to avoid boundary misses
-        const lastCheckpointDate = new Date(checkpoint.lastCheckpointValue);
-        fromDate = new Date(lastCheckpointDate.getTime() - 15 * 60 * 1000);
+        // Re-read a 15-minute overlap to avoid missing updates
+        // around the previous checkpoint.
+        const lastCheckpointDate = new Date(
+          checkpoint.lastCheckpointValue,
+        );
+
+        if (Number.isNaN(lastCheckpointDate.getTime())) {
+          fromDate = new Date(
+            toDate.getTime() -
+              lookbackDays * 24 * 60 * 60 * 1000,
+          );
+        } else {
+          fromDate = new Date(
+            lastCheckpointDate.getTime() - 15 * 60 * 1000,
+          );
+        }
       }
 
-      // Format ISO strings without milliseconds as expected by Uniware (YYYY-MM-DDTHH:mm:ss)
-      const formatUniwareDate = (d: Date) => d.toISOString().split(".")[0];
+      // Uniware expects YYYY-MM-DDTHH:mm:ss.
+      // No milliseconds or timezone suffix.
+      const formatUniwareDate = (date: Date): string => {
+        const pad = (value: number) =>
+          String(value).padStart(2, "0");
+
+        return (
+          `${date.getFullYear()}-` +
+          `${pad(date.getMonth() + 1)}-` +
+          `${pad(date.getDate())}T` +
+          `${pad(date.getHours())}:` +
+          `${pad(date.getMinutes())}:` +
+          `${pad(date.getSeconds())}`
+        );
+      };
+
       const fromDateStr = formatUniwareDate(fromDate);
       const toDateStr = formatUniwareDate(toDate);
 
@@ -60,7 +150,7 @@ export class UniwareSyncService {
 
       while (hasMore) {
         const searchResult = await uniwareClient.searchOrders({
-          dateType: checkpoint?.lastCheckpointValue ? "UPDATED" : "CREATED",
+          dateType,
           fromDate: fromDateStr,
           toDate: toDateStr,
           searchOptions: {
@@ -71,81 +161,139 @@ export class UniwareSyncService {
         });
 
         if (!searchResult.successful) {
-          const err = searchResult.errors?.[0]?.message || "Uniware search API reported unsuccessful";
-          throw new Error(err);
+          const message =
+            searchResult.errors?.[0]?.message ||
+            "Uniware search API reported unsuccessful";
+
+          throw new Error(message);
         }
 
         const elements = searchResult.elements || [];
+
         recordsFetched += elements.length;
 
         for (const item of elements) {
           try {
-            await this.processUniwareOrder(item.code);
+            if (!item?.code) {
+              throw new Error(
+                "Uniware search result did not contain an order code",
+              );
+            }
+
+            await this.processUniwareOrder(item.code, item);
             recordsUpserted++;
-          } catch (itemErr) {
-            console.error(`Failed to process Uniware order #${item.code}:`, itemErr);
+          } catch (itemErr: unknown) {
+            console.error(
+              `Failed to process Uniware order #${item?.code || "UNKNOWN"}:`,
+              itemErr,
+            );
+
             recordsFailed++;
           }
         }
 
-        if (elements.length < pageSize) {
-          hasMore = false;
-        } else {
+        hasMore = elements.length === pageSize;
+
+        if (hasMore) {
           displayStart += pageSize;
         }
       }
 
-      // 2. Advance checkpoint safely now that all pages in window succeeded
+      const checkpointStatus: SyncStatus =
+        recordsFailed === 0 ? "SUCCESS" : "FAILED";
+
+      const checkpointData = {
+        lastRunAt: startedAt,
+        status: checkpointStatus,
+        lastSuccessAt:
+          recordsFailed === 0 ? new Date() : undefined,
+        failureCount:
+          recordsFailed === 0
+            ? 0
+            : { increment: 1 },
+        lastError:
+          recordsFailed === 0
+            ? null
+            : `${recordsFailed} order(s) failed during processing`,
+      };
+
       await prisma.integrationCheckpoint.upsert({
         where: { provider: "UNIWARE" },
+
         update: {
-          lastCheckpointValue: toDate.toISOString(),
-          lastRunAt: startedAt,
-          lastSuccessAt: new Date(),
-          status: "SUCCESS",
-          failureCount: 0,
-          lastError: null,
+          ...checkpointData,
+
+          // A CREATED sync must not advance the UPDATED checkpoint.
+          ...(dateType === "UPDATED"
+            ? { lastCheckpointValue: toDate.toISOString() }
+            : {}),
         },
+
         create: {
           provider: "UNIWARE",
           lastCheckpointValue: toDate.toISOString(),
           lastRunAt: startedAt,
-          lastSuccessAt: new Date(),
-          status: "SUCCESS",
+          lastSuccessAt:
+            recordsFailed === 0 ? new Date() : undefined,
+          status: recordsFailed === 0 ? "SUCCESS" : "FAILED",
+          failureCount: recordsFailed,
+          lastError:
+            recordsFailed === 0
+              ? null
+              : `${recordsFailed} order(s) failed during processing`,
         },
       });
 
-      // 3. Complete SyncRun
       await prisma.integrationSyncRun.update({
         where: { id: syncRun.id },
+
         data: {
           completedAt: new Date(),
-          status: "SUCCESS",
+          status: recordsFailed === 0 ? "SUCCESS" : "FAILED",
           recordsFetched,
           recordsUpserted,
           recordsFailed,
+          ...(recordsFailed > 0
+            ? {
+                errorMessage:
+                  `${recordsFailed} order(s) failed during processing`,
+              }
+            : {}),
         },
       });
 
       return {
         syncRunId: syncRun.id,
-        status: "SUCCESS",
+        status: recordsFailed === 0 ? "SUCCESS" : "FAILED",
         recordsFetched,
         recordsUpserted,
         recordsFailed,
+        ...(recordsFailed > 0
+          ? {
+              errorMessage:
+                `${recordsFailed} order(s) failed during processing`,
+            }
+          : {}),
       };
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error("[UniwareSync] Sync run failed:", errorMessage);
+      const errorMessage =
+        err instanceof Error ? err.message : String(err);
+
+      console.error(
+        "[UniwareSync] Sync run failed:",
+        errorMessage,
+      );
 
       await prisma.integrationCheckpoint.upsert({
         where: { provider: "UNIWARE" },
+
         update: {
           lastRunAt: startedAt,
           status: "FAILED",
           failureCount: { increment: 1 },
           lastError: errorMessage,
         },
+
         create: {
           provider: "UNIWARE",
           lastRunAt: startedAt,
@@ -157,6 +305,7 @@ export class UniwareSyncService {
 
       await prisma.integrationSyncRun.update({
         where: { id: syncRun.id },
+
         data: {
           completedAt: new Date(),
           status: "FAILED",
@@ -179,101 +328,378 @@ export class UniwareSyncService {
   }
 
   /**
-   * Process a single order by fetching complete details and upserting into database
+   * Fetch order details and safely insert or update the order.
+   *
+   * The database's uniwareOrderCode is the unique identifier.
+   * This makes CREATED and UPDATED syncs safe to repeat.
    */
-  public async processUniwareOrder(orderCode: string) {
+  public async processUniwareOrder(
+    orderCode: string,
+    searchElement?: any,
+  ) {
     const details = await uniwareClient.getOrderDetails(orderCode);
-    const dto = details.saleOrderDTO;
-    if (!dto) throw new Error(`Empty saleOrderDTO returned for code ${orderCode}`);
 
-    const shippingAddr = dto.addresses?.find((a) => a.type === "SHIPPING") || dto.addresses?.[0];
-    const country = shippingAddr?.country?.toUpperCase() || "IN";
+    const dto = details?.saleOrderDTO;
+
+    if (!dto) {
+      throw new Error(
+        `Empty saleOrderDTO returned for code ${orderCode}`,
+      );
+    }
+
+    const uniwareOrderCode = String(
+      dto.code || orderCode,
+    ).trim();
+
+    if (!uniwareOrderCode) {
+      throw new Error(
+        "Uniware order is missing its order code",
+      );
+    }
+
+    const shippingAddr =
+      dto.addresses?.find(
+        (address: any) => address.type === "SHIPPING",
+      ) || dto.addresses?.[0];
+
+    const country = String(
+      shippingAddr?.country || "IN",
+    ).toUpperCase();
+
     const isExport = country !== "IN";
 
-    // Upsert Order
+    const toDateObj = (
+      value: string | number | undefined | null,
+    ): Date | undefined => {
+      if (
+        value === undefined ||
+        value === null ||
+        value === ""
+      ) {
+        return undefined;
+      }
+
+      const parsed = new Date(value);
+
+      return Number.isNaN(parsed.getTime())
+        ? undefined
+        : parsed;
+    };
+
+    const displayOrderDateTime =
+      toDateObj(dto.displayOrderDateTime) ||
+      toDateObj(dto.created) ||
+      toDateObj(searchElement?.displayOrderDateTime) ||
+      toDateObj(searchElement?.created) ||
+      new Date();
+
+    const fulfillmentDeadline =
+      toDateObj(dto.fulfillmentTat) ||
+      toDateObj(searchElement?.fulfillmentTat) ||
+      new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    const uniwareStatus = String(
+      dto.status || searchElement?.status || "PROCESSING",
+    ).toUpperCase();
+
+    const packageStatuses: string[] = (
+      dto.shippingPackages || []
+    ).map((pkg: any) =>
+      String(pkg.status || "").toUpperCase(),
+    );
+
+    const hasReadyToShipPackage = packageStatuses.some(
+      (status: string) =>
+        [
+          "READY_TO_SHIP",
+          "SHIPPED",
+          "DISPATCHED",
+          "DELIVERED",
+        ].includes(status),
+    );
+
+    let initialStage: InternalStage = "PRODUCTION";
+
+    let nextAction =
+      "Check finished-goods inventory and allocate available quantity; manufacture any shortage";
+
+    let priorityScore = 50;
+
+    let priorityLabel:
+      | "LOW"
+      | "NORMAL"
+      | "HIGH"
+      | "URGENT"
+      | "OVERDUE" = "NORMAL";
+
+    if (
+      ["COMPLETE", "DELIVERED", "SHIPPED"].includes(
+        uniwareStatus,
+      ) ||
+      hasReadyToShipPackage
+    ) {
+      initialStage = "DELIVERY";
+      nextAction =
+        "Review shipping package and dispatch status in Uniware";
+      priorityScore = 20;
+      priorityLabel = "LOW";
+    } else if (uniwareStatus === "CANCELLED") {
+      initialStage = "CANCELLED";
+      nextAction = "Order cancelled in Uniware";
+      priorityScore = 0;
+      priorityLabel = "LOW";
+    }
+
+    // Check if this order has already been imported.
     const existingOrder = await prisma.order.findUnique({
-      where: { uniwareOrderCode: dto.code },
+      where: { uniwareOrderCode },
     });
 
-    const order = await prisma.order.upsert({
-      where: { uniwareOrderCode: dto.code },
-      update: {
-        displayOrderCode: dto.displayOrderCode,
-        channel: dto.channel || "UNIWARE",
-        source: dto.source || "UNIWARE",
-        uniwareStatus: dto.status,
-        packagingType: isExport ? "EXPORT" : "DOMESTIC",
-        destinationCountry: country,
-        shippingAddressCity: shippingAddr?.city,
-        shippingAddressState: shippingAddr?.state,
-        currency: dto.currency || "INR",
-        totalAmount: dto.totalPrice || 0,
-        isCod: !!dto.cashOnDelivery,
-        displayOrderDateTime: dto.created ? new Date(dto.created) : undefined,
-        fulfillmentDeadline: dto.fulfillmentTat ? new Date(dto.fulfillmentTat) : undefined,
-      },
-      create: {
-        uniwareOrderCode: dto.code,
-        displayOrderCode: dto.displayOrderCode,
-        channel: dto.channel || "UNIWARE",
-        source: dto.source || "UNIWARE",
-        uniwareStatus: dto.status,
-        internalStage: "RAW_MATERIAL",
-        packagingType: isExport ? "EXPORT" : "DOMESTIC",
-        destinationCountry: country,
-        shippingAddressCity: shippingAddr?.city,
-        shippingAddressState: shippingAddr?.state,
-        currency: dto.currency || "INR",
-        totalAmount: dto.totalPrice || 0,
-        isCod: !!dto.cashOnDelivery,
-        displayOrderDateTime: dto.created ? new Date(dto.created) : undefined,
-        fulfillmentDeadline: dto.fulfillmentTat ? new Date(dto.fulfillmentTat) : undefined,
-      },
-    });
+    // Extract items: Uniware order items can be returned under saleOrderItems,
+    // saleOrderItemDTOs, or derived from shippingPackages[].items
+    let rawItems: any[] =
+      dto.saleOrderItems ??
+      dto.saleOrderItemDTOs ??
+      (Array.isArray(dto.items) ? dto.items : []);
 
-    // Process line items
-    if (dto.saleOrderItems) {
-      for (const item of dto.saleOrderItems) {
-        // Find matching SKU by itemSKU or fallback
-        let sku = await prisma.sKU.findUnique({
-          where: { code: item.itemSKU },
-        });
-
-        if (!sku) {
-          // Auto create SKU placeholder if first time seen
-          sku = await prisma.sKU.create({
-            data: {
-              code: item.itemSKU,
-              name: item.itemName || item.itemSKU,
-              unitPrice: item.sellingPrice || 0,
-            },
-          });
-        }
-
-        const existingLine = await prisma.orderLine.findFirst({
-          where: { orderId: order.id, skuId: sku.id },
-        });
-
-        if (!existingLine) {
-          await prisma.orderLine.create({
-            data: {
-              orderId: order.id,
-              skuId: sku.id,
-              uniwareItemCode: item.code,
-              quantity: item.quantity || 1,
-              unitPrice: item.sellingPrice || item.totalPrice || 0,
-              status: item.itemStatus || dto.status,
-            },
-          });
+    // If saleOrderItems is empty but shippingPackages contains items map, aggregate from packages
+    if (rawItems.length === 0 && Array.isArray(dto.shippingPackages)) {
+      for (const pkg of dto.shippingPackages) {
+        if (pkg?.items && typeof pkg.items === "object") {
+          for (const item of Object.values(pkg.items)) {
+            if (item) rawItems.push(item);
+          }
         }
       }
     }
 
-    // If order was newly created, trigger allocation workflow
-    if (!existingOrder) {
+    if (!Array.isArray(rawItems) || rawItems.length === 0) {
+      throw new Error(
+        `No sale-order items returned for Uniware order ${uniwareOrderCode}; refusing to create a fake SKU/line`,
+      );
+    }
+
+    const currency = String(
+      dto.currencyCode || dto.currency || "INR",
+    ).toUpperCase();
+
+    const totalAmountFromDto = Number(
+      dto.totalAmount ?? dto.totalPrice ?? dto.sellingPrice,
+    );
+
+    const totalAmount = Number.isFinite(totalAmountFromDto)
+      ? totalAmountFromDto
+      : 0;
+
+    const isCod = Boolean(
+      dto.cod ??
+        dto.cashOnDelivery ??
+        dto.isCod ??
+        false,
+    );
+
+    const order = await prisma.order.upsert({
+      where: { uniwareOrderCode },
+
+      update: {
+        displayOrderCode:
+          dto.displayOrderCode ||
+          searchElement?.displayOrderCode,
+
+        channel:
+          dto.channel ||
+          searchElement?.channel ||
+          "UNKNOWN",
+
+        source:
+          dto.source ||
+          searchElement?.source ||
+          dto.channel ||
+          searchElement?.channel ||
+          "UNKNOWN",
+
+        uniwareStatus,
+        packagingType: isExport ? "EXPORT" : "DOMESTIC",
+        destinationCountry: country,
+        shippingAddressCity: shippingAddr?.city || "-",
+        shippingAddressState: shippingAddr?.state || "-",
+        currency,
+        totalAmount,
+        isCod,
+        displayOrderDateTime,
+        fulfillmentDeadline,
+
+        // Preserve the internal workflow for existing orders.
+        ...(!existingOrder
+          ? {
+              internalStage: initialStage,
+              nextAction,
+              priorityScore,
+              priorityLabel,
+            }
+          : {}),
+      },
+
+      create: {
+        uniwareOrderCode,
+
+        displayOrderCode:
+          dto.displayOrderCode ||
+          searchElement?.displayOrderCode,
+
+        channel:
+          dto.channel ||
+          searchElement?.channel ||
+          "UNKNOWN",
+
+        source:
+          dto.source ||
+          searchElement?.source ||
+          dto.channel ||
+          searchElement?.channel ||
+          "UNKNOWN",
+
+        uniwareStatus,
+        internalStage: initialStage,
+        packagingType: isExport ? "EXPORT" : "DOMESTIC",
+        destinationCountry: country,
+        shippingAddressCity: shippingAddr?.city || "-",
+        shippingAddressState: shippingAddr?.state || "-",
+        currency,
+        totalAmount,
+        isCod,
+        displayOrderDateTime,
+        fulfillmentDeadline,
+        priorityScore,
+        priorityLabel,
+        nextAction,
+      },
+    });
+
+    for (const item of rawItems) {
+      const itemSkuCode = String(
+        item.itemSku ??
+          item.sellerSkuCode ??
+          item.channelProductId ??
+          item.itemSKU ??
+          item.skuCode ??
+          "",
+      ).trim();
+
+      if (!itemSkuCode) {
+        throw new Error(
+          `Order ${uniwareOrderCode} contains a line without itemSku/sellerSkuCode/channelProductId`,
+        );
+      }
+
+      const itemName = String(
+        item.itemName || itemSkuCode,
+      ).trim();
+
+      // Uniware saleOrderItems represents discrete fulfillment units where each entry represents
+      // 1 unit unless item.quantity or totalQuantity is explicitly specified.
+      const parsedQty = Number(
+        item.quantity ??
+          item.totalQuantity ??
+          1,
+      );
+      const qty = Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : 1;
+
+      const unitPriceValue = Number(
+        item.sellingPrice ??
+          item.unitPrice ??
+          item.price ??
+          0,
+      );
+
+      const unitPrice = Number.isFinite(unitPriceValue)
+        ? unitPriceValue
+        : 0;
+
+      let sku = await prisma.sKU.findUnique({
+        where: { code: itemSkuCode },
+      });
+
+      // Create a basic SKU record if this SKU is not in the catalogue.
+      if (!sku) {
+        sku = await prisma.sKU.create({
+          data: {
+            code: itemSkuCode,
+            name: itemName,
+            category: "General",
+            unitOfManufacture: "PCS",
+            defaultLeadTimeDays: 7,
+            domesticPackingType: "Standard Box",
+            exportPackingType:
+              "Export Palletized Wooden Crate",
+          },
+        });
+      }
+
+      const uniwareItemCode = String(
+        item.code ||
+          item.orderItemCode ||
+          `${uniwareOrderCode}-${itemSkuCode}`,
+      ).trim();
+
+      const existingLine = await prisma.orderLine.findFirst({
+        where: {
+          orderId: order.id,
+          skuId: sku.id,
+        },
+      });
+
+      if (existingLine) {
+        // Refresh Uniware data only.
+        // Preserve internal allocation and packing quantities.
+        await prisma.orderLine.update({
+          where: { id: existingLine.id },
+
+          data: {
+            uniwareItemCode,
+            quantity: qty,
+            unitPrice,
+            status: String(
+              item.itemStatus || uniwareStatus,
+            ),
+          },
+        });
+      } else {
+        const isCompleted =
+          initialStage === "DELIVERY";
+
+        await prisma.orderLine.create({
+          data: {
+            orderId: order.id,
+            skuId: sku.id,
+            uniwareItemCode,
+            quantity: qty,
+            unitPrice,
+            status: String(
+              item.itemStatus || uniwareStatus,
+            ),
+            allocatedPackedQty: isCompleted ? qty : 0,
+            packedCompletedQty: isCompleted ? qty : 0,
+            dispatchReadyQty: isCompleted ? qty : 0,
+          },
+        });
+      }
+    }
+
+    // Run allocation only for newly imported production orders.
+    // The workflow service should check finished-goods inventory first.
+    // RAW_MATERIAL is reserved for an explicit user decision that
+    // raw materials are unavailable.
+    //
+    // Do not rerun allocation on every sync because that could
+    // overwrite existing manual workflow decisions.
+    if (!existingOrder && initialStage === "PRODUCTION") {
       await workflowService.allocateOrder(order.id);
     }
+
+    return order;
   }
 }
 
-export const uniwareSyncService = new UniwareSyncService();
+export const uniwareSyncService =
+  new UniwareSyncService();

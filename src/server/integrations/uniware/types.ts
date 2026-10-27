@@ -1,3 +1,4 @@
+
 export interface UniwareTokenResponse {
   access_token: string;
   token_type: string;
@@ -6,10 +7,12 @@ export interface UniwareTokenResponse {
   scope: string;
 }
 
+export type UniwareSyncDateType = "CREATED" | "UPDATED";
+
 export interface UniwareSearchRequest {
-  dateType: "CREATED" | "UPDATED";
-  fromDate: string; // ISO format e.g. 2026-10-01T00:00:00
-  toDate: string;   // ISO format e.g. 2026-10-22T23:59:59
+  dateType: UniwareSyncDateType;
+  fromDate: string;
+  toDate: string;
   searchOptions: {
     displayStart: number;
     displayLength: number;
@@ -19,27 +22,40 @@ export interface UniwareSearchRequest {
 
 export interface UniwareSearchResponseElement {
   code: string;
+  orderCategory?: string | null;
   displayOrderCode?: string;
   channel?: string;
   source?: string;
-  displayOrderDateTime?: string;
+  displayOrderDateTime?: string | number;
   status: string;
-  created?: string;
-  updated?: string;
-  fulfillmentTat?: string;
+  created?: string | number;
+  updated?: string | number;
+  fulfillmentTat?: string | number;
+  notificationEmail?: string;
+  notificationMobile?: string;
+  customerGSTIN?: string | null;
+  channelProcessingTime?: string | number;
 }
 
 export interface UniwareSearchResponse {
   successful: boolean;
-  errors?: Array<{ code: string; message: string }>;
-  warnings?: Array<{ code: string; message: string }>;
+  errors?: Array<{
+    code: string;
+    message: string;
+  }>;
+  warnings?: Array<{
+    code: string;
+    message: string;
+  }>;
   totalRecords?: number;
   elements?: UniwareSearchResponseElement[];
 }
 
 export interface UniwareOrderItemDTO {
-  code: string;
-  itemSKU: string;
+  code?: string;
+  itemSku?: string;
+  sellerSkuCode?: string;
+  channelProductId?: string;
   itemName?: string;
   quantity?: number;
   totalPrice?: number;
@@ -47,10 +63,18 @@ export interface UniwareOrderItemDTO {
   itemStatus?: string;
   shippingPackageCode?: string;
   facilityCode?: string;
+
+  // Compatibility with older or differently shaped responses.
+  itemSKU?: string;
+  skuCode?: string;
+  unitPrice?: number;
+  price?: number;
+  [key: string]: unknown;
 }
 
 export interface UniwareShippingPackageDTO {
-  code: string;
+  code?: string;
+  status?: string;
   shippingPackageStatus?: string;
   courierCode?: string;
   courierName?: string;
@@ -58,6 +82,18 @@ export interface UniwareShippingPackageDTO {
   estimatedDeliveryDate?: string;
   dispatchDate?: string;
   deliveredDate?: string;
+  [key: string]: unknown;
+}
+
+export interface UniwareAddressDTO {
+  id?: number;
+  name?: string;
+  addressLine1?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  pincode?: string;
+  type?: string;
 }
 
 export interface UniwareSaleOrderDTO {
@@ -66,29 +102,35 @@ export interface UniwareSaleOrderDTO {
   channel?: string;
   source?: string;
   status: string;
-  created?: string;
-  updated?: string;
+  created?: string | number;
+  updated?: string | number;
   currency?: string;
+  currencyCode?: string;
   totalPrice?: number;
+  totalAmount?: number;
+  sellingPrice?: number;
+  cod?: boolean;
   cashOnDelivery?: boolean;
-  fulfillmentTat?: string;
-  addresses?: Array<{
-    id: number;
-    name?: string;
-    addressLine1?: string;
-    city?: string;
-    state?: string;
-    country?: string;
-    pincode?: string;
-    type?: string;
-  }>;
+  isCod?: boolean;
+  fulfillmentTat?: string | number;
+  displayOrderDateTime?: string | number;
+  addresses?: UniwareAddressDTO[];
   saleOrderItems?: UniwareOrderItemDTO[];
+  saleOrderItemDTOs?: UniwareOrderItemDTO[];
+  items?: UniwareOrderItemDTO[];
   shippingPackages?: UniwareShippingPackageDTO[];
+  [key: string]: unknown;
 }
 
 export interface UniwareSaleOrderGetResponse {
   successful: boolean;
-  errors?: Array<{ code: string; message: string }>;
-  warnings?: Array<{ code: string; message: string }>;
+  errors?: Array<{
+    code: string;
+    message: string;
+  }>;
+  warnings?: Array<{
+    code: string;
+    message: string;
+  }>;
   saleOrderDTO?: UniwareSaleOrderDTO;
 }

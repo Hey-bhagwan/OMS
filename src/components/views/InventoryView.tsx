@@ -18,6 +18,11 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ bucket, searchFilt
   const [addReason, setAddReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkSearch, setBulkSearch] = useState("");
+  const [bulkSelected, setBulkSelected] = useState<string[]>([]);
+  const [bulkQuantities, setBulkQuantities] = useState<Record<string, string>>({});
+  const [bulkReason, setBulkReason] = useState("");
 
   const fetchStocks = () => {
     setLoading(true);
@@ -72,6 +77,83 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ bucket, searchFilt
     }
   };
 
+  const handleBulkAddStock = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const items = bulkSelected
+      .map((skuId) => ({
+        skuId,
+        quantityChange: Number(bulkQuantities[skuId]),
+      }))
+      .filter(
+        (item) =>
+          Number.isInteger(item.quantityChange) &&
+          item.quantityChange > 0
+      );
+
+    if (!items.length || !bulkReason.trim()) {
+      setMsg("Select products and enter valid quantities and an audit reason.");
+      return;
+    }
+
+    setSubmitting(true);
+    setMsg(null);
+
+    try {
+      const results = await Promise.all(
+        items.map(async (item) => {
+          try {
+            const res = await fetch("/api/inventory/adjust", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                ...item,
+                bucket,
+                reason: bulkReason.trim(),
+              }),
+            });
+
+            const data = await res.json();
+
+            return {
+              skuId: item.skuId,
+              success: res.ok && data.success === true,
+              error: data.error || `HTTP ${res.status}`,
+            };
+          } catch {
+            return {
+              skuId: item.skuId,
+              success: false,
+              error: "Request failed",
+            };
+          }
+        })
+      );
+
+      const succeeded = results.filter((r) => r.success).length;
+      const failed = results.filter((r) => !r.success);
+
+      if (failed.length === 0) {
+        setMsg(`Successfully added stock to all ${succeeded} products.`);
+        setShowBulkModal(false);
+        setBulkSelected([]);
+        setBulkQuantities({});
+        setBulkReason("");
+        fetchStocks();
+      } else {
+        setMsg(
+          `${succeeded} products updated; ${failed.length} failed. Failed SKU IDs: ${failed.map((r) => r.skuId).join(", ")
+          }. Please review before retrying.`
+        );
+
+        if (succeeded > 0) fetchStocks();
+      }
+    } finally {
+      setSubmitting(false);
+      setTimeout(() => setMsg(null), 10000);
+    }
+  };
+
   const filtered = stocks.filter((s) => {
     if (!searchFilter) return true;
     const q = searchFilter.toLowerCase();
@@ -107,6 +189,16 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ bucket, searchFilt
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Stock to {isPacked ? "Packed" : "Unpacked"}</span>
+          </button>
+
+          <button
+            onClick={() => setShowBulkModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5
+              bg-stone-800 hover:bg-stone-700 text-white
+              text-xs font-semibold rounded-md transition"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Bulk Stock Update</span>
           </button>
 
           <a
@@ -260,6 +352,192 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ bucket, searchFilt
                 className="px-4 py-1.5 font-semibold bg-[#a27b5c] text-white hover:bg-[#8a6549] rounded transition"
               >
                 {submitting ? "Adding..." : "Add to Stock"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {showBulkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center
+        bg-black/40 backdrop-blur-xs p-4">
+
+          <form
+            onSubmit={handleBulkAddStock}
+            className="w-full max-w-3xl max-h-[90vh] overflow-y-auto
+            bg-white p-6 rounded-lg shadow-xl space-y-4 text-xs"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-stone-900">
+                  Bulk Stock Update
+                </h3>
+                <p className="text-stone-500 mt-1">
+                  Add stock to multiple products in{" "}
+                  {isPacked ? "Packed" : "Unpacked"} inventory.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowBulkModal(false)}
+                className="text-stone-500 hover:text-stone-900 text-lg"
+              >
+                ×
+              </button>
+            </div>
+
+            <input
+              type="text"
+              value={bulkSearch}
+              onChange={(e) => setBulkSearch(e.target.value)}
+              placeholder="Search SKU code or product name..."
+              className="w-full px-3 py-2 border border-stone-300 rounded"
+            />
+
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-stone-700">
+                {bulkSelected.length} products selected
+              </span>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const visibleSkus = allSkus.filter((s) => {
+                    const q = bulkSearch.toLowerCase();
+                    return (
+                      !q ||
+                      s.skuCode?.toLowerCase().includes(q) ||
+                      s.skuName?.toLowerCase().includes(q)
+                    );
+                  });
+
+                  const visibleIds = visibleSkus.map((s) => s.skuId);
+                  const allVisibleSelected = visibleIds.every((id) =>
+                    bulkSelected.includes(id)
+                  );
+
+                  setBulkSelected((prev) =>
+                    allVisibleSelected
+                      ? prev.filter((id) => !visibleIds.includes(id))
+                      : [...new Set([...prev, ...visibleIds])]
+                  );
+                }}
+                className="text-[#8a6549] font-semibold"
+              >
+                Select / deselect visible
+              </button>
+            </div>
+
+            <div className="border border-stone-200 rounded-lg overflow-hidden">
+              <div className="max-h-72 overflow-y-auto">
+                <table className="w-full text-left">
+                  <thead className="sticky top-0 bg-stone-50 border-b">
+                    <tr>
+                      <th className="p-3">Select</th>
+                      <th className="p-3">SKU / Product</th>
+                      <th className="p-3">Quantity to Add</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-stone-100">
+                    {allSkus
+                      .filter((s) => {
+                        const q = bulkSearch.toLowerCase();
+                        return (
+                          !q ||
+                          s.skuCode?.toLowerCase().includes(q) ||
+                          s.skuName?.toLowerCase().includes(q)
+                        );
+                      })
+                      .map((s) => {
+                        const selected = bulkSelected.includes(s.skuId);
+
+                        return (
+                          <tr key={s.skuId} className="hover:bg-stone-50">
+                            <td className="p-3">
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                onChange={(e) => {
+                                  setBulkSelected((prev) =>
+                                    e.target.checked
+                                      ? [...prev, s.skuId]
+                                      : prev.filter((id) => id !== s.skuId)
+                                  );
+                                }}
+                              />
+                            </td>
+
+                            <td className="p-3">
+                              <div className="font-mono font-semibold">
+                                {s.skuCode}
+                              </div>
+                              <div className="text-stone-500 mt-1">
+                                {s.skuName}
+                              </div>
+                            </td>
+
+                            <td className="p-3">
+                              <input
+                                type="number"
+                                min="1"
+                                step="1"
+                                disabled={!selected}
+                                required={selected}
+                                value={bulkQuantities[s.skuId] || ""}
+                                onChange={(e) =>
+                                  setBulkQuantities((prev) => ({
+                                    ...prev,
+                                    [s.skuId]: e.target.value,
+                                  }))
+                                }
+                                placeholder="Qty"
+                                className="w-24 px-2 py-1.5 border
+                                border-stone-300 rounded disabled:bg-stone-100"
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-semibold text-stone-700 mb-1">
+                Audit Reason (Mandatory)
+              </label>
+
+              <textarea
+                required
+                rows={2}
+                value={bulkReason}
+                onChange={(e) => setBulkReason(e.target.value)}
+                placeholder="e.g. Warehouse stock replenishment batch #45"
+                className="w-full px-3 py-2 border border-stone-300 rounded"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowBulkModal(false)}
+                className="px-4 py-2 text-stone-600 hover:bg-stone-100 rounded"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={submitting || bulkSelected.length === 0}
+                className="px-4 py-2 font-semibold bg-[#a27b5c]
+                text-white hover:bg-[#8a6549] rounded disabled:opacity-50"
+              >
+                {submitting
+                  ? "Updating stock..."
+                  : `Add Stock to ${bulkSelected.length} Products`}
               </button>
             </div>
           </form>

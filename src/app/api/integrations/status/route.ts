@@ -23,8 +23,12 @@ export async function GET() {
     return NextResponse.json({
       uniware: {
         baseUrl: process.env.UNIWARE_BASE_URL || "https://koaliving.unicommerce.com",
-        usernameConfigured: !!process.env.UNIWARE_USERNAME,
-        status: uniwareCp?.status || "CONNECTED",
+        usernameConfigured: !!(process.env.UNIWARE_AUTH_TOKEN?.trim() || (process.env.UNIWARE_USERNAME && process.env.UNIWARE_USERNAME !== "api_user")),
+        authMode: process.env.UNIWARE_AUTH_TOKEN?.trim() ? "BEARER_TOKEN" : "OAUTH",
+        fromDate: process.env.UNIWARE_FROM_DATE || null,
+        lookbackDays: parseInt(process.env.UNIWARE_INITIAL_LOOKBACK_DAYS || "60", 10),
+        pageSize: parseInt(process.env.UNIWARE_PAGE_SIZE || "50", 10),
+        status: uniwareCp?.status || "NOT_SYNCED",
         lastRunAt: uniwareCp?.lastRunAt,
         lastSuccessAt: uniwareCp?.lastSuccessAt,
         failureCount: uniwareCp?.failureCount || 0,

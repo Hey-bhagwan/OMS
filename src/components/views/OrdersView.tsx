@@ -16,7 +16,7 @@ import {
   Clock,
   UserCheck,
 } from "lucide-react";
-import { formatCurrency, formatShortDate, formatDate } from "@/lib/utils";
+import { formatShortDate, formatDate } from "@/lib/utils";
 
 function getValidForwardStages(currentStage: string): { stage: string; label: string; color: string }[] {
   switch (currentStage) {
@@ -325,7 +325,7 @@ export const OrdersView: React.FC<{ searchFilter?: string }> = ({ searchFilter }
                 <th className="py-2.5 px-4">Order Code</th>
                 <th className="py-2.5 px-4">Channel</th>
                 <th className="py-2.5 px-4">Items / SKU</th>
-                <th className="py-2.5 px-4 text-right">Amount</th>
+                <th className="py-2.5 px-4 text-center">Total Qty</th>
                 <th className="py-2.5 px-4">Internal Stage</th>
                 <th className="py-2.5 px-4">Packaging</th>
                 <th className="py-2.5 px-4">Priority</th>
@@ -361,8 +361,8 @@ export const OrdersView: React.FC<{ searchFilter?: string }> = ({ searchFilter }
                       <span className="font-mono font-semibold text-stone-800 block">{o.primarySku}</span>
                       <span className="text-stone-500 text-[10px] block truncate max-w-xs">{o.primarySkuName}</span>
                     </td>
-                    <td className="py-2.5 px-4 text-right font-medium text-stone-900">
-                      {formatCurrency(o.totalAmount, o.currency)}
+                    <td className="py-2.5 px-4 text-center font-semibold text-stone-800">
+                      {o.lines?.reduce((sum: number, l: any) => sum + (l.quantity || 0), 0) || 1}
                     </td>
                     <td className="py-2.5 px-4">
                       <span
@@ -500,10 +500,7 @@ export const OrdersView: React.FC<{ searchFilter?: string }> = ({ searchFilter }
                           <span className="text-stone-600 text-[11px]">{line.sku.name}</span>
                         </div>
                         <div className="text-right">
-                          <span className="font-semibold">{line.quantity} Unit(s)</span>
-                          <span className="text-stone-400 block text-[10px]">
-                            {formatCurrency(line.unitPrice, selectedOrder.currency)}
-                          </span>
+                          <span className="font-semibold text-stone-900">{line.quantity} Unit(s)</span>
                         </div>
                       </div>
 

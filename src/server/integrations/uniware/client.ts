@@ -41,6 +41,12 @@ export class UniwareClient {
    * Acquire a valid OAuth access token with expiration-awareness and single-flight lock
    */
   public async getAccessToken(): Promise<string> {
+    // 1. Check for directly provided Bearer token (e.g. from Postman or .env)
+    const directToken = process.env.UNIWARE_AUTH_TOKEN?.trim();
+    if (directToken) {
+      return directToken;
+    }
+
     const now = Date.now();
     // Cache valid if more than 60 seconds before expiration
     if (this.tokenCache && this.tokenCache.expiresAt - now > 60_000) {
@@ -53,14 +59,20 @@ export class UniwareClient {
 
     this.inflightTokenPromise = (async () => {
       try {
-        if (!this.username || !this.password || this.username === "api_user") {
-          this.log("Live Uniware credentials not configured; using offline token mock mode.");
+        if (process.env.UNIWARE_USE_MOCK === "true" || process.env.NODE_ENV === "test") {
+          this.log("Offline mock token mode enabled.");
           const mockToken = "mock_uniware_token_" + Date.now();
           this.tokenCache = {
             accessToken: mockToken,
             expiresAt: Date.now() + 3600_000,
           };
           return mockToken;
+        }
+
+        if (!this.username || !this.password || this.username === "api_user") {
+          throw new Error(
+            "Uniware credentials not configured! Please provide UNIWARE_AUTH_TOKEN (from Postman) or set valid UNIWARE_USERNAME and UNIWARE_PASSWORD in .env"
+          );
         }
 
         const url = new URL(`${this.baseUrl}/oauth/token`);
@@ -215,7 +227,7 @@ export class UniwareClient {
     const res = await fetch(endpoint, {
       method: "POST",
       headers: {
-        Authorization: `bearer ${token}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
         Accept: "application/json",
       },
@@ -228,12 +240,16 @@ export class UniwareClient {
       const retryRes = await fetch(endpoint, {
         method: "POST",
         headers: {
-          Authorization: `bearer ${retryToken}`,
+          Authorization: `Bearer ${retryToken}`,
           "Content-Type": "application/json",
           Accept: "application/json",
         },
         body: JSON.stringify({ code: orderCode, paymentDetailRequired: false }),
       });
+      if (!retryRes.ok) {
+        const err = await retryRes.text().catch(() => "");
+        throw new Error(`Uniware get order retry failed (${retryRes.status}): ${err.slice(0, 200)}`);
+      }
       return (await retryRes.json()) as UniwareSaleOrderGetResponse;
     }
 
