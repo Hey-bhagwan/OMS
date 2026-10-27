@@ -49,13 +49,50 @@ export async function GET(req: NextRequest) {
         skip,
         take: limit,
         orderBy: [{ priorityScore: "desc" }, { createdAt: "desc" }],
-        include: {
+        select: {
+          id: true,
+          uniwareOrderCode: true,
+          displayOrderCode: true,
+          channel: true,
+          uniwareStatus: true,
+          internalStage: true,
+          packagingType: true,
+          destinationCountry: true,
+          shippingAddressCity: true,
+          totalAmount: true,
+          currency: true,
+          isCod: true,
+          fulfillmentDeadline: true,
+          priorityScore: true,
+          priorityLabel: true,
+          blockerReason: true,
+          nextAction: true,
+          createdAt: true,
           lines: {
-            include: {
-              sku: true,
+            select: {
+              id: true,
+              quantity: true,
+              allocatedPackedQty: true,
+              allocatedUnpackedQty: true,
+              requiredProductionQty: true,
+              requiredRawMaterialQty: true,
+              packedCompletedQty: true,
+              unitPrice: true,
+              sku: {
+                select: {
+                  code: true,
+                  name: true,
+                },
+              },
             },
           },
-          shipments: true,
+          shipments: {
+            take: 1,
+            select: {
+              awbWaybill: true,
+              normalizedStatus: true,
+            },
+          },
         },
       }),
     ]);

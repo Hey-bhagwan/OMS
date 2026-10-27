@@ -94,7 +94,8 @@ export class WorkflowService {
    * 7. When all quantities are packed, order is ready for DISPATCH.
    */
   public async allocateOrder(orderId: string, actorId?: string): Promise<WorkflowEvaluationResult> {
-    return await prisma.$transaction(async (tx) => {
+    return await prisma.$transaction(
+      async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
         include: {
@@ -513,7 +514,7 @@ export class WorkflowService {
         blockerReason: activeBlocker,
         relevantQuantities,
       };
-    });
+    }, { timeout: 60000, maxWait: 10000 });
   }
 
   /**
@@ -645,11 +646,10 @@ export class WorkflowService {
           });
         }
       }
+    }, { timeout: 30000, maxWait: 10000 });
 
-      // Re-evaluate order workflow state immediately
-      const evaluation = await this.allocateOrder(order.id, actorId);
-      return evaluation;
-    });
+    // Re-evaluate order workflow state outside the transaction
+    return await this.allocateOrder(orderId, actorId);
   }
 
   /**
@@ -668,7 +668,7 @@ export class WorkflowService {
       throw new Error("Quantity to release must be greater than zero");
     }
 
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const block = await tx.rawMaterialBlock.findUnique({
         where: { id: blockId },
         include: { order: true, orderLine: true, sku: true },
@@ -734,17 +734,26 @@ export class WorkflowService {
         },
       });
 
-      // Re-evaluate order workflow state
-      await this.allocateOrder(block.orderId, actorId);
-
       return {
         success: true,
         blockId: block.id,
         releasedQuantity: quantityToRelease,
         remainingBlocked: block.blockedQuantity - newReleased,
         isFullyResolved,
+        orderId: block.orderId,
       };
-    });
+    }, { timeout: 30000, maxWait: 10000 });
+
+    // Re-evaluate order workflow state outside the transaction
+    await this.allocateOrder(result.orderId, actorId);
+
+    return {
+      success: result.success,
+      blockId: result.blockId,
+      releasedQuantity: result.releasedQuantity,
+      remainingBlocked: result.remainingBlocked,
+      isFullyResolved: result.isFullyResolved,
+    };
   }
 
   /**

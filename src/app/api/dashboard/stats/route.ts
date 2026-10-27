@@ -9,105 +9,166 @@ export async function GET() {
     const now = new Date();
     const todayStart = startOfDay(now);
 
-    const [
-      allOrders,
-      todayNewOrdersCount,
-      pendingAssessmentsCount,
-      blockedRawCount,
-      inProductionOrdersCount,
-      awaitingPackingCount,
-      awaitingDispatchCount,
-      delayedOrdersCount,
-      onHoldCount,
-      deliveryExceptionsCount,
-      shipmentsCount,
-      latestPriorityOrders,
-      packedStockSummary,
-      unpackedStockSummary,
-    ] = await Promise.all([
-      prisma.order.findMany({
-        where: { internalStage: { not: "CANCELLED" } },
-        select: {
-          id: true,
-          internalStage: true,
-          fulfillmentDeadline: true,
-          priorityScore: true,
-          blockerReason: true,
-        },
-      }),
-      prisma.order.count({
-        where: { createdAt: { gte: todayStart } },
-      }),
-      prisma.rawMaterialBlock.count({
-        where: { status: "PENDING_ASSESSMENT" },
-      }),
-      prisma.rawMaterialBlock.count({
-        where: { status: "BLOCKED" },
-      }),
-      prisma.productionOrder.count({
-        where: { status: { in: ["READY", "IN_PROGRESS"] } },
-      }),
-      prisma.packingTask.count({
-        where: { status: { in: ["PENDING", "IN_PROGRESS"] } },
-      }),
-      prisma.order.count({
-        where: { internalStage: "DISPATCH" },
-      }),
-      prisma.order.count({
-        where: {
-          fulfillmentDeadline: { lt: now },
-          internalStage: { notIn: ["DELIVERY", "CANCELLED"] },
-        },
-      }),
-      prisma.order.count({
-        where: { internalStage: "ON_HOLD" },
-      }),
-      prisma.order.count({
-        where: { internalStage: { in: ["DELIVERY_EXCEPTION", "RTO"] } },
-      }),
-      prisma.shipment.groupBy({
-        by: ["normalizedStatus"],
-        _count: { id: true },
-      }),
-      prisma.order.findMany({
-        take: 12,
-        orderBy: [{ priorityScore: "desc" }, { createdAt: "asc" }],
-        include: {
-          lines: {
-            include: {
-              sku: true,
-              rawMaterialBlocks: { where: { status: { in: ["BLOCKED", "PENDING_ASSESSMENT"] } } },
+    // 1. Single combined SQL query to gather ALL dashboard metrics in 1 round-trip.
+    // This eliminates connection pool bursting and timeouts on hosted Supabase Postgres.
+    const combinedStatsResult: any = await prisma.$queryRawUnsafe(`
+      SELECT json_build_object(
+        'orders', (
+          SELECT coalesce(json_agg(json_build_object(
+            'id', id,
+            'stage', "internalStage",
+            'deadline', "fulfillmentDeadline",
+            'created', "createdAt"
+          )), '[]'::json)
+          FROM "Order"
+          WHERE "internalStage" != 'CANCELLED'
+        ),
+        'raw_materials', (
+          SELECT coalesce(json_agg(json_build_object('status', status, 'count', c)), '[]'::json)
+          FROM (SELECT status, count(*) as c FROM "RawMaterialBlock" GROUP BY status) rm
+        ),
+        'production', (
+          SELECT coalesce(json_agg(json_build_object('status', status, 'count', c)), '[]'::json)
+          FROM (SELECT status, count(*) as c FROM "ProductionOrder" GROUP BY status) po
+        ),
+        'packing', (
+          SELECT coalesce(json_agg(json_build_object('status', status, 'count', c)), '[]'::json)
+          FROM (SELECT status, count(*) as c FROM "PackingTask" GROUP BY status) pt
+        ),
+        'shipments', (
+          SELECT coalesce(json_agg(json_build_object('status', "normalizedStatus", 'count', c)), '[]'::json)
+          FROM (SELECT "normalizedStatus", count(*) as c FROM "Shipment" GROUP BY "normalizedStatus") sh
+        ),
+        'stock', (
+          SELECT coalesce(json_agg(json_build_object('bucket', bucket, 'onHand', oh, 'available', av)), '[]'::json)
+          FROM (SELECT bucket, sum("quantityOnHand") as oh, sum("quantityAvailable") as av FROM "FinishedGoodsStock" GROUP BY bucket) st
+        )
+      ) as data
+    `);
+
+    const statsData = combinedStatsResult?.[0]?.data || {};
+    const allOrders: any[] = statsData.orders || [];
+    const rawMaterialGroups: any[] = statsData.raw_materials || [];
+    const packingGroups: any[] = statsData.packing || [];
+    const shipmentCounts: any[] = statsData.shipments || [];
+    const stockGroups: any[] = statsData.stock || [];
+
+    // 2. Priority orders with lean selects
+    const latestPriorityOrders = await prisma.order.findMany({
+      take: 12,
+      orderBy: [{ priorityScore: "desc" }, { createdAt: "asc" }],
+      select: {
+        id: true,
+        uniwareOrderCode: true,
+        displayOrderCode: true,
+        channel: true,
+        uniwareStatus: true,
+        internalStage: true,
+        fulfillmentDeadline: true,
+        priorityScore: true,
+        priorityLabel: true,
+        blockerReason: true,
+        nextAction: true,
+        staffRemark: true,
+        createdAt: true,
+        lines: {
+          select: {
+            quantity: true,
+            allocatedPackedQty: true,
+            allocatedUnpackedQty: true,
+            requiredProductionQty: true,
+            blockedRawMaterialQty: true,
+            pendingAssessmentQty: true,
+            sku: {
+              select: {
+                code: true,
+                name: true,
+              },
             },
           },
-          remarks: {
-            take: 1,
-            orderBy: { createdAt: "desc" },
-          },
-          stageHistory: {
-            take: 1,
-            orderBy: { timestamp: "desc" },
-          },
         },
-      }),
-      prisma.finishedGoodsStock.aggregate({
-        where: { bucket: "PACKED" },
-        _sum: { quantityOnHand: true, quantityAvailable: true },
-      }),
-      prisma.finishedGoodsStock.aggregate({
-        where: { bucket: "UNPACKED" },
-        _sum: { quantityOnHand: true, quantityAvailable: true },
-      }),
-    ]);
+        remarks: {
+          take: 1,
+          orderBy: { createdAt: "desc" },
+          select: { text: true },
+        },
+        stageHistory: {
+          take: 1,
+          orderBy: { timestamp: "desc" },
+          select: { reason: true },
+        },
+      },
+    });
+
+    // Aggregate in-memory KPIs from allOrders
+    let totalActiveOrders = 0;
+    let newOrdersToday = 0;
+    let inProductionOrdersCount = 0;
+    let awaitingDispatchCount = 0;
+    let delayedOrdersCount = 0;
+    let onHoldCount = 0;
+    let deliveryExceptionsCount = 0;
+
+    for (const o of allOrders) {
+      if (o.stage !== "DELIVERY") {
+        totalActiveOrders++;
+      }
+      if (o.created && new Date(o.created) >= todayStart) {
+        newOrdersToday++;
+      }
+      if (o.stage === "PRODUCTION") {
+        inProductionOrdersCount++;
+      } else if (o.stage === "DISPATCH") {
+        awaitingDispatchCount++;
+      } else if (o.stage === "ON_HOLD") {
+        onHoldCount++;
+      } else if (o.stage === "DELIVERY_EXCEPTION" || o.stage === "RTO") {
+        deliveryExceptionsCount++;
+      }
+
+      if (
+        o.deadline &&
+        new Date(o.deadline) < now &&
+        o.stage !== "DELIVERY" &&
+        o.stage !== "CANCELLED"
+      ) {
+        delayedOrdersCount++;
+      }
+    }
+
+    // Process Raw Material status counts
+    let pendingAssessmentsCount = 0;
+    let blockedRawCount = 0;
+    for (const rm of rawMaterialGroups) {
+      if (rm.status === "PENDING_ASSESSMENT") pendingAssessmentsCount = Number(rm.count || 0);
+      if (rm.status === "BLOCKED") blockedRawCount = Number(rm.count || 0);
+    }
+
+    // Process Packing status counts (PENDING or IN_PROGRESS)
+    let awaitingPackingCount = 0;
+    for (const pkg of packingGroups) {
+      if (pkg.status === "PENDING" || pkg.status === "IN_PROGRESS") {
+        awaitingPackingCount += Number(pkg.count || 0);
+      }
+    }
+
+    // Process Stock groups
+    let packedStockQty = 0;
+    let unpackedStockQty = 0;
+    for (const s of stockGroups) {
+      if (s.bucket === "PACKED") packedStockQty = Number(s.onHand || 0);
+      if (s.bucket === "UNPACKED") unpackedStockQty = Number(s.onHand || 0);
+    }
 
     let inTransit = 0;
     let deliveredCount = 0;
 
-    for (const shp of shipmentsCount) {
-      if (shp.normalizedStatus === "IN_TRANSIT" || shp.normalizedStatus === "OUT_FOR_DELIVERY" || shp.normalizedStatus === "PICKED_UP") {
-        inTransit += shp._count.id;
+    for (const shp of shipmentCounts) {
+      if (shp.status === "IN_TRANSIT" || shp.status === "OUT_FOR_DELIVERY" || shp.status === "PICKED_UP") {
+        inTransit += Number(shp.count || 0);
       }
-      if (shp.normalizedStatus === "DELIVERED") {
-        deliveredCount += shp._count.id;
+      if (shp.status === "DELIVERED") {
+        deliveredCount += Number(shp.count || 0);
       }
     }
 
@@ -118,16 +179,16 @@ export async function GET() {
       const dateStr = d.toISOString().split("T")[0];
       daysTrend.push({
         date: dateStr,
-        packedStock: Number(packedStockSummary._sum.quantityOnHand || 0) + (14 - i),
-        unpackedStock: Number(unpackedStockSummary._sum.quantityOnHand || 0) + Math.max(0, 10 - i),
+        packedStock: packedStockQty + (14 - i),
+        unpackedStock: unpackedStockQty + Math.max(0, 10 - i),
       });
     }
 
     return NextResponse.json({
       success: true,
       kpis: {
-        totalActiveOrders: allOrders.filter((o) => o.internalStage !== "DELIVERY").length,
-        newOrdersToday: todayNewOrdersCount,
+        totalActiveOrders,
+        newOrdersToday,
         awaitingRawAssessment: pendingAssessmentsCount,
         blockedRawMaterial: blockedRawCount,
         inProduction: inProductionOrdersCount,
