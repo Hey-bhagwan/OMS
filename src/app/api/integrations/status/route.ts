@@ -19,8 +19,20 @@ export async function GET() {
 
     const uniwareCp = checkpoints.find((c) => c.provider === "UNIWARE");
     const shiprocketCp = checkpoints.find((c) => c.provider === "SHIPROCKET");
+    const activeRun = recentSyncRuns.find((r) => r.status === "RUNNING");
 
     return NextResponse.json({
+      activeSync: activeRun
+        ? {
+            id: activeRun.id,
+            provider: activeRun.provider,
+            syncType: activeRun.syncType,
+            startedAt: activeRun.startedAt,
+            recordsFetched: activeRun.recordsFetched,
+            recordsUpserted: activeRun.recordsUpserted,
+            recordsFailed: activeRun.recordsFailed,
+          }
+        : null,
       uniware: {
         baseUrl: process.env.UNIWARE_BASE_URL || "https://koaliving.unicommerce.com",
         usernameConfigured: !!(process.env.UNIWARE_AUTH_TOKEN?.trim() || (process.env.UNIWARE_USERNAME && process.env.UNIWARE_USERNAME !== "api_user")),

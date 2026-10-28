@@ -34,6 +34,34 @@ export const Header: React.FC<HeaderProps> = ({
   const [showSyncOptions, setShowSyncOptions] = useState(false);
   const [syncStatusMsg, setSyncStatusMsg] = useState<string | null>(null);
   const [syncError, setSyncError] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ fetched: number; upserted: number; failed: number } | null>(null);
+
+  // Poll sync status when syncing is active
+  React.useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    if (isSyncing) {
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch("/api/integrations/status");
+          const data = await res.json();
+          if (data.activeSync) {
+            setSyncProgress({
+              fetched: data.activeSync.recordsFetched || 0,
+              upserted: data.activeSync.recordsUpserted || 0,
+              failed: data.activeSync.recordsFailed || 0,
+            });
+          }
+        } catch {
+          // ignore polling errors
+        }
+      }, 2000);
+    } else {
+      setSyncProgress(null);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isSyncing]);
 
   const handleManualSync = async (mode: SyncMode) => {
     if (isSyncing) return;
@@ -125,13 +153,34 @@ export const Header: React.FC<HeaderProps> = ({
           }`}
         >
           {isSyncing ? (
-            <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+            <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0 text-[#a27b5c]" />
           ) : syncError ? (
             <X className="w-3.5 h-3.5 shrink-0" />
           ) : (
             <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
           )}
-          <span>{syncStatusMsg}</span>
+          <div className="flex flex-col">
+            <span className="font-medium">
+              {isSyncing && syncProgress && syncProgress.fetched > 0
+                ? `Syncing orders: ${syncProgress.upserted} / ${syncProgress.fetched} (${Math.round(
+                    (syncProgress.upserted / syncProgress.fetched) * 100
+                  )}%)`
+                : syncStatusMsg}
+            </span>
+            {isSyncing && syncProgress && syncProgress.fetched > 0 && (
+              <div className="w-full bg-amber-200 h-1.5 rounded-full mt-1 overflow-hidden">
+                <div
+                  className="bg-[#a27b5c] h-1.5 rounded-full transition-all duration-300"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      Math.round((syncProgress.upserted / syncProgress.fetched) * 100)
+                    )}%`,
+                  }}
+                />
+              </div>
+            )}
+          </div>
         </div>
       )}
 

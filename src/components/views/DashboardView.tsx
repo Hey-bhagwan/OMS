@@ -19,6 +19,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { formatCurrency, formatShortDate } from "@/lib/utils";
+import { useCachedFetch } from "@/lib/useCachedFetch";
 
 interface DashboardViewProps {
   onNavigateToTab: (tab: any, filter?: any) => void;
@@ -26,23 +27,7 @@ interface DashboardViewProps {
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToTab, searchFilter }) => {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  const fetchStats = () => {
-    setLoading(true);
-    fetch("/api/dashboard/stats")
-      .then((res) => res.json())
-      .then((json) => {
-        setData(json);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    fetchStats();
-  }, []);
+  const { data, loading, isBackgroundFetching, refetch } = useCachedFetch<any>("/api/dashboard/stats");
 
   if (loading) {
     return (
@@ -95,11 +80,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToTab, s
               <span>Print</span>
             </button>
             <button
-              onClick={fetchStats}
+              onClick={() => refetch(true)}
               className="p-1 text-stone-500 hover:text-stone-900 border border-stone-200 rounded bg-white hover:bg-stone-50 transition"
               title="Refresh Stats"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              <RefreshCw className={`w-3.5 h-3.5 ${isBackgroundFetching ? "animate-spin text-[#a27b5c]" : ""}`} />
             </button>
           </div>
         </div>

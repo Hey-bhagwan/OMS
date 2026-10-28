@@ -172,6 +172,13 @@ export class UniwareSyncService {
 
         recordsFetched += elements.length;
 
+        // Persist progress of fetched count
+        await prisma.integrationSyncRun.update({
+          where: { id: syncRun.id },
+          data: { recordsFetched },
+        }).catch(() => {});
+
+        let processedInBatch = 0;
         for (const item of elements) {
           try {
             if (!item?.code) {
@@ -189,6 +196,14 @@ export class UniwareSyncService {
             );
 
             recordsFailed++;
+          }
+
+          processedInBatch++;
+          if (processedInBatch % 5 === 0 || processedInBatch === elements.length) {
+            await prisma.integrationSyncRun.update({
+              where: { id: syncRun.id },
+              data: { recordsUpserted, recordsFailed },
+            }).catch(() => {});
           }
         }
 
@@ -369,7 +384,7 @@ export class UniwareSyncService {
     const isExport = country !== "IN";
 
     const toDateObj = (
-      value: string | number | undefined | null,
+      value: any,
     ): Date | undefined => {
       if (
         value === undefined ||
@@ -683,6 +698,78 @@ export class UniwareSyncService {
             dispatchReadyQty: isCompleted ? qty : 0,
           },
         });
+      }
+    }
+
+    // Process shipping packages if provided by Uniware (creates or updates Shipment tracking)
+    if (Array.isArray(dto.shippingPackages) && dto.shippingPackages.length > 0) {
+      for (const pkg of dto.shippingPackages) {
+        const awb = String(
+          pkg.trackingNumber ||
+            pkg.channelShipmentCode ||
+            pkg.code ||
+            "",
+        ).trim();
+
+        if (awb) {
+          const pkgStatus = String(pkg.status || "").toUpperCase();
+          let normalizedStatus: "SHIPMENT_CREATED" | "READY_FOR_PICKUP" | "PICKED_UP" | "IN_TRANSIT" | "OUT_FOR_DELIVERY" | "DELIVERED" | "CANCELLED" = "SHIPMENT_CREATED";
+
+          if (pkgStatus === "DELIVERED") {
+            normalizedStatus = "DELIVERED";
+          } else if (["SHIPPED", "DISPATCHED"].includes(pkgStatus)) {
+            normalizedStatus = "IN_TRANSIT";
+          } else if (pkgStatus === "READY_TO_SHIP") {
+            normalizedStatus = "READY_FOR_PICKUP";
+          } else if (pkgStatus === "CANCELLED") {
+            normalizedStatus = "CANCELLED";
+          }
+
+          const dispatchedAt = toDateObj(pkg.dispatched);
+          const deliveredAt = toDateObj(pkg.delivered);
+          const courierName = String(
+            pkg.shippingCourier ||
+              pkg.shippingProvider ||
+              pkg.shippingMethod ||
+              "Uniware Courier",
+          ).trim();
+
+          const scanLocation = (pkg.city || shippingAddr?.city || undefined) as string | undefined;
+
+          await prisma.shipment.upsert({
+            where: {
+              provider_awbWaybill: {
+                provider: "UNIWARE",
+                awbWaybill: awb,
+              },
+            },
+            update: {
+              orderId: order.id,
+              uniwareOrderCode: order.uniwareOrderCode,
+              courierName,
+              normalizedStatus,
+              providerStatus: pkgStatus,
+              dispatchedAt: dispatchedAt || undefined,
+              deliveredAt: deliveredAt || undefined,
+              currentScanActivity: `Package status: ${pkgStatus}`,
+              currentScanLocation: scanLocation,
+            },
+            create: {
+              orderId: order.id,
+              uniwareOrderCode: order.uniwareOrderCode,
+              provider: "UNIWARE",
+              awbWaybill: awb,
+              courierName,
+              normalizedStatus,
+              providerStatus: pkgStatus,
+              dispatchedAt,
+              deliveredAt,
+              currentScanActivity: `Package status: ${pkgStatus}`,
+              currentScanLocation: scanLocation,
+              matchConfidence: "EXACT_AWB",
+            },
+          });
+        }
       }
     }
 

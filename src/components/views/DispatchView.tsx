@@ -3,10 +3,9 @@
 import React, { useEffect, useState } from "react";
 import { Send, CheckCircle2 } from "lucide-react";
 import { formatShortDate } from "@/lib/utils";
+import { useCachedFetch } from "@/lib/useCachedFetch";
 
 export const DispatchView: React.FC<{ searchFilter?: string }> = ({ searchFilter }) => {
-  const [orders, setOrders] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [courierName, setCourierName] = useState("Blue Dart");
   const [awbWaybill, setAwbWaybill] = useState("");
@@ -14,20 +13,14 @@ export const DispatchView: React.FC<{ searchFilter?: string }> = ({ searchFilter
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  const fetchOrders = () => {
-    setLoading(true);
-    fetch("/api/dispatch")
-      .then((res) => res.json())
-      .then((data) => {
-        setOrders(data.orders || []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
+  const {
+    data: dispatchData,
+    loading,
+    isBackgroundFetching,
+    refetch: fetchOrders,
+  } = useCachedFetch<any>("/api/dispatch");
 
-  useEffect(() => {
-    fetchOrders();
-  }, []);
+  const orders = (dispatchData?.orders || []) as any[];
 
   const handleRecordDispatch = async (e: React.FormEvent) => {
     e.preventDefault();

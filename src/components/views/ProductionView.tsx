@@ -16,10 +16,9 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { formatShortDate, formatDate } from "@/lib/utils";
+import { useCachedFetch } from "@/lib/useCachedFetch";
 
 export const ProductionView: React.FC<{ searchFilter?: string }> = ({ searchFilter }) => {
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
   const [localSearch, setLocalSearch] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -32,24 +31,17 @@ export const ProductionView: React.FC<{ searchFilter?: string }> = ({ searchFilt
   const [inputText, setInputText] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchTasks = () => {
-    setLoading(true);
-    let url = "/api/production?";
-    if (statusFilter) url += `status=${statusFilter}`;
+  let productionUrl = "/api/production?";
+  if (statusFilter) productionUrl += `status=${statusFilter}`;
 
-    fetch(url)
-      .then((res) => res.json())
-      .then((data) => {
-        setTasks(data.tasks || []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
+  const {
+    data: prodData,
+    loading,
+    isBackgroundFetching,
+    refetch: fetchTasks,
+  } = useCachedFetch<any>(productionUrl);
 
-  useEffect(() => {
-    fetchTasks();
-  }, [statusFilter]);
-
+  const tasks = (prodData?.tasks || []) as any[];
   const handleStartWork = async (taskId: string, code: string) => {
     try {
       const res = await fetch(`/api/production/${taskId}/start`, { method: "POST" });

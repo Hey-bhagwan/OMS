@@ -3,30 +3,23 @@
 import React, { useEffect, useState } from "react";
 import { Truck, AlertTriangle, CheckCircle2, Clock, MapPin } from "lucide-react";
 import { formatDate, formatShortDate } from "@/lib/utils";
+import { useCachedFetch } from "@/lib/useCachedFetch";
 
 export const DeliveryView: React.FC<{ searchFilter?: string }> = ({ searchFilter }) => {
-  const [shipments, setShipments] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
   const [selectedShipment, setSelectedShipment] = useState<any | null>(null);
 
-  const fetchShipments = () => {
-    setLoading(true);
-    let url = "/api/delivery";
-    if (filter) url += `?filter=${filter}`;
+  let deliveryUrl = "/api/delivery";
+  if (filter) deliveryUrl += `?filter=${filter}`;
 
-    fetch(url)
-      .then((res) => res.json())
-      .then((data) => {
-        setShipments(data.shipments || []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
+  const {
+    data: deliveryData,
+    loading,
+    isBackgroundFetching,
+    refetch: fetchShipments,
+  } = useCachedFetch<any>(deliveryUrl);
 
-  useEffect(() => {
-    fetchShipments();
-  }, [filter]);
+  const shipments = (deliveryData?.shipments || []) as any[];
 
   const filtered = shipments.filter((s) => {
     if (!searchFilter) return true;

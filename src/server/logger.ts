@@ -2,9 +2,14 @@ import fs from "fs";
 import path from "path";
 import util from "util";
 
-// Ensure logs directory exists at the root of the project
+// Disable file logging on Vercel or when ENABLE_FILE_LOGGING is not 'true'
+// On Vercel, process.env.VERCEL is automatically set to "1"
+const isVercel = Boolean(process.env.VERCEL);
+const fileLoggingEnabled = process.env.ENABLE_FILE_LOGGING === "true" && !isVercel;
+
+// Ensure logs directory exists at the root of the project only if enabled
 const logsDir = path.resolve(process.cwd(), "logs");
-if (!fs.existsSync(logsDir)) {
+if (fileLoggingEnabled && !fs.existsSync(logsDir)) {
   try {
     fs.mkdirSync(logsDir, { recursive: true });
   } catch (e) {
@@ -20,6 +25,7 @@ function formatTimestamp(): string {
 }
 
 function writeToLogFile(level: string, message: string) {
+  if (!fileLoggingEnabled) return;
   try {
     const line = `[${formatTimestamp()}] [${level}] ${message}\n`;
     fs.appendFileSync(logFilePath, line, "utf8");
@@ -32,7 +38,7 @@ function writeToLogFile(level: string, message: string) {
 const globalLogger = globalThis as unknown as { __server_logger_initialized__?: boolean };
 
 export function initServerLogger() {
-  if (globalLogger.__server_logger_initialized__) {
+  if (!fileLoggingEnabled || globalLogger.__server_logger_initialized__) {
     return;
   }
   globalLogger.__server_logger_initialized__ = true;

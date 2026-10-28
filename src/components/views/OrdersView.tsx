@@ -17,6 +17,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { formatShortDate, formatDate } from "@/lib/utils";
+import { useCachedFetch } from "@/lib/useCachedFetch";
 
 function getValidForwardStages(currentStage: string): { stage: string; label: string; color: string }[] {
   switch (currentStage) {
@@ -68,8 +69,6 @@ function getValidForwardStages(currentStage: string): { stage: string; label: st
 }
 
 export const OrdersView: React.FC<{ searchFilter?: string }> = ({ searchFilter }) => {
-  const [orders, setOrders] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [stageFilter, setStageFilter] = useState<string>("");
   const [channelFilter, setChannelFilter] = useState<string>("");
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
@@ -86,24 +85,18 @@ export const OrdersView: React.FC<{ searchFilter?: string }> = ({ searchFilter }
   const [rmRemark, setRmRemark] = useState("");
   const [rmSubmitting, setRmSubmitting] = useState(false);
 
-  const fetchOrders = () => {
-    setLoading(true);
-    let url = "/api/orders?limit=50";
-    if (stageFilter) url += `&stage=${stageFilter}`;
-    if (channelFilter) url += `&channel=${channelFilter}`;
+  let ordersUrl = "/api/orders?limit=50";
+  if (stageFilter) ordersUrl += `&stage=${stageFilter}`;
+  if (channelFilter) ordersUrl += `&channel=${channelFilter}`;
 
-    fetch(url)
-      .then((res) => res.json())
-      .then((data) => {
-        setOrders(data.orders || []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
+  const {
+    data: ordersData,
+    loading,
+    isBackgroundFetching,
+    refetch: fetchOrders,
+  } = useCachedFetch<any>(ordersUrl);
 
-  useEffect(() => {
-    fetchOrders();
-  }, [stageFilter, channelFilter]);
+  const orders = (ordersData?.orders || []) as any[];
 
   const viewOrderDetails = async (orderId: string) => {
     try {

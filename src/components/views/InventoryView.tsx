@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { Download, RefreshCw, Archive, Layers, Plus, CheckCircle2 } from "lucide-react";
+import { useCachedFetch } from "@/lib/useCachedFetch";
 
 interface InventoryViewProps {
   bucket: "PACKED" | "UNPACKED";
@@ -9,8 +10,6 @@ interface InventoryViewProps {
 }
 
 export const InventoryView: React.FC<InventoryViewProps> = ({ bucket, searchFilter }) => {
-  const [stocks, setStocks] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [allSkus, setAllSkus] = useState<any[]>([]);
   const [selectedSkuId, setSelectedSkuId] = useState("");
@@ -24,25 +23,23 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ bucket, searchFilt
   const [bulkQuantities, setBulkQuantities] = useState<Record<string, string>>({});
   const [bulkReason, setBulkReason] = useState("");
 
-  const fetchStocks = () => {
-    setLoading(true);
-    const endpoint = bucket === "PACKED" ? "/api/inventory/packed" : "/api/inventory/unpacked";
-    fetch(endpoint)
-      .then((res) => res.json())
-      .then((data) => {
-        setStocks(data.stocks || []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
+  const endpoint = bucket === "PACKED" ? "/api/inventory/packed" : "/api/inventory/unpacked";
+
+  const {
+    data: stockData,
+    loading,
+    isBackgroundFetching,
+    refetch: fetchStocks,
+  } = useCachedFetch<any>(endpoint);
+
+  const stocks = (stockData?.stocks || []) as any[];
 
   useEffect(() => {
-    fetchStocks();
     // Load SKUs for add stock dropdown
     fetch("/api/inventory/packed")
       .then((res) => res.json())
       .then((data) => setAllSkus(data.stocks || []));
-  }, [bucket]);
+  }, []);
 
   const handleAddStock = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -420,7 +417,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ bucket, searchFilt
                   setBulkSelected((prev) =>
                     allVisibleSelected
                       ? prev.filter((id) => !visibleIds.includes(id))
-                      : [...new Set([...prev, ...visibleIds])]
+                      : Array.from(new Set([...prev, ...visibleIds]))
                   );
                 }}
                 className="text-[#8a6549] font-semibold"

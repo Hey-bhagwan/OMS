@@ -18,20 +18,17 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { formatShortDate, formatDate } from "@/lib/utils";
+import { useCachedFetch } from "@/lib/useCachedFetch";
 
 export const RawMaterialView: React.FC<{
   searchFilter?: string;
   onNavigateToOrder?: (orderId: string) => void;
 }> = ({ searchFilter, onNavigateToOrder }) => {
-  const [blocks, setBlocks] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("BLOCKED"); // "BLOCKED", "PENDING_ASSESSMENT", "RESOLVED", "ALL"
+  const [statusFilter, setStatusFilter] = useState("PENDING_ASSESSMENT"); // "BLOCKED", "PENDING_ASSESSMENT", "RESOLVED", "ALL"
   const [channelFilter, setChannelFilter] = useState("");
   const [localSearch, setLocalSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalRecords, setTotalRecords] = useState(0);
 
   // Modals
   const [selectedBlock, setSelectedBlock] = useState<any | null>(null);
@@ -43,25 +40,21 @@ export const RawMaterialView: React.FC<{
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const fetchBlocks = () => {
-    setLoading(true);
-    let url = `/api/raw-material/queue?page=${page}&limit=25&status=${statusFilter}`;
-    if (channelFilter) url += `&channel=${encodeURIComponent(channelFilter)}`;
-    const q = searchFilter || localSearch;
-    if (q) url += `&search=${encodeURIComponent(q)}`;
+  const q = searchFilter || localSearch;
+  let queueUrl = `/api/raw-material/queue?page=${page}&limit=25&status=${statusFilter}`;
+  if (channelFilter) queueUrl += `&channel=${encodeURIComponent(channelFilter)}`;
+  if (q) queueUrl += `&search=${encodeURIComponent(q)}`;
 
-    fetch(url)
-      .then((res) => res.json())
-      .then((data) => {
-        setBlocks(data.blocks || []);
-        if (data.pagination) {
-          setTotalPages(data.pagination.totalPages || 1);
-          setTotalRecords(data.pagination.total || 0);
-        }
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
+  const {
+    data: queueData,
+    loading,
+    isBackgroundFetching,
+    refetch: fetchBlocks,
+  } = useCachedFetch<any>(queueUrl);
+
+  const blocks = (queueData?.blocks || []) as any[];
+  const totalPages = queueData?.pagination?.totalPages || 1;
+  const totalRecords = queueData?.pagination?.total || 0;
 
   const fetchUsers = () => {
     fetch("/api/users")
@@ -71,9 +64,8 @@ export const RawMaterialView: React.FC<{
   };
 
   useEffect(() => {
-    fetchBlocks();
     fetchUsers();
-  }, [page, statusFilter, channelFilter]);
+  }, []);
 
   const openModal = (block: any, mode: "RELEASE" | "REMARK" | "ASSIGN" | "HISTORY") => {
     setSelectedBlock(block);

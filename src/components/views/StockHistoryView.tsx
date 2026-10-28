@@ -3,29 +3,22 @@
 import React, { useEffect, useState } from "react";
 import { History, Download, RefreshCw } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { useCachedFetch } from "@/lib/useCachedFetch";
 
 export const StockHistoryView: React.FC<{ searchFilter?: string }> = ({ searchFilter }) => {
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [bucketFilter, setBucketFilter] = useState("");
 
-  const fetchHistory = () => {
-    setLoading(true);
-    let url = "/api/inventory/history?limit=100";
-    if (bucketFilter) url += `&bucket=${bucketFilter}`;
+  let historyUrl = "/api/inventory/history?limit=100";
+  if (bucketFilter) historyUrl += `&bucket=${bucketFilter}`;
 
-    fetch(url)
-      .then((res) => res.json())
-      .then((data) => {
-        setTransactions(data.transactions || []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
+  const {
+    data: historyData,
+    loading,
+    isBackgroundFetching,
+    refetch: fetchHistory,
+  } = useCachedFetch<any>(historyUrl);
 
-  useEffect(() => {
-    fetchHistory();
-  }, [bucketFilter]);
+  const transactions = (historyData?.transactions || []) as any[];
 
   const filtered = transactions.filter((t) => {
     if (!searchFilter) return true;

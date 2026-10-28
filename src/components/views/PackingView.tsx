@@ -3,31 +3,25 @@
 import React, { useEffect, useState } from "react";
 import { PackageCheck, CheckCircle2 } from "lucide-react";
 import { formatShortDate } from "@/lib/utils";
+import { useCachedFetch } from "@/lib/useCachedFetch";
 
 export const PackingView: React.FC<{ searchFilter?: string }> = ({ searchFilter }) => {
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
 
-  const fetchTasks = () => {
-    setLoading(true);
-    let url = "/api/packing";
-    if (showCompleted) url += "?showCompleted=true";
+  let packingUrl = "/api/packing";
+  if (showCompleted) packingUrl += "?showCompleted=true";
 
-    fetch(url)
-      .then((res) => res.json())
-      .then((data) => {
-        setTasks(data.tasks || []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
+  const {
+    data: packingData,
+    loading,
+    isBackgroundFetching,
+    refetch: fetchTasks,
+    mutate,
+  } = useCachedFetch<any>(packingUrl);
 
-  useEffect(() => {
-    fetchTasks();
-  }, [showCompleted]);
+  const tasks = (packingData?.tasks || []) as any[];
 
   const handleComplete = async (taskId: string) => {
     setCompletingId(taskId);
@@ -37,7 +31,10 @@ export const PackingView: React.FC<{ searchFilter?: string }> = ({ searchFilter 
       if (data.success) {
         setFeedback("Packaging verified: Goods transferred to Packed inventory and removed from active packing queue.");
         // Immediately remove completed task from active view
-        setTasks((prev) => prev.filter((t) => t.id !== taskId));
+        mutate((prev: any) => ({
+          ...prev,
+          tasks: (prev?.tasks || []).filter((t: any) => t.id !== taskId),
+        }));
       } else {
         setFeedback(data.error || "Failed to complete packing");
       }

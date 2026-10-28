@@ -17,6 +17,7 @@ import { ReportsView } from "@/components/views/ReportsView";
 import { SettingsView } from "@/components/views/SettingsView";
 import { UsersView } from "@/components/views/UsersView";
 import { ProductMasterView } from "@/components/views/ProductMasterView";
+import { invalidateCache } from "@/lib/useCachedFetch";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<NavTab>("dashboard");
@@ -198,7 +199,10 @@ export default function Home() {
         <Header
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
-          onRefreshData={() => setRefreshKey((k) => k + 1)}
+          onRefreshData={() => {
+            invalidateCache();
+            setRefreshKey((k) => k + 1);
+          }}
           userName={user.name}
           userRole={user.role}
         />

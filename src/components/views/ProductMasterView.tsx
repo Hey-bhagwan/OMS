@@ -3,10 +3,9 @@
 import React, { useEffect, useState } from "react";
 import { Download, Printer, Plus, Edit2, Search, CheckCircle2, AlertCircle, X, Shield, RefreshCw } from "lucide-react";
 import { formatShortDate } from "@/lib/utils";
+import { useCachedFetch } from "@/lib/useCachedFetch";
 
 export const ProductMasterView: React.FC<{ searchFilter?: string }> = ({ searchFilter }) => {
-  const [products, setProducts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [localSearch, setLocalSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [activeOnly, setActiveOnly] = useState(false);
@@ -31,24 +30,18 @@ export const ProductMasterView: React.FC<{ searchFilter?: string }> = ({ searchF
   const [qualityRequirements, setQualityRequirements] = useState("");
   const [isActive, setIsActive] = useState(true);
 
-  const fetchProducts = () => {
-    setLoading(true);
-    let url = "/api/products?";
-    if (categoryFilter) url += `category=${encodeURIComponent(categoryFilter)}&`;
-    if (activeOnly) url += `activeOnly=true&`;
+  let productsUrl = "/api/products?";
+  if (categoryFilter) productsUrl += `category=${encodeURIComponent(categoryFilter)}&`;
+  if (activeOnly) productsUrl += `activeOnly=true&`;
 
-    fetch(url)
-      .then((res) => res.json())
-      .then((data) => {
-        setProducts(data.products || []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
+  const {
+    data: productsData,
+    loading,
+    isBackgroundFetching,
+    refetch: fetchProducts,
+  } = useCachedFetch<any>(productsUrl);
 
-  useEffect(() => {
-    fetchProducts();
-  }, [categoryFilter, activeOnly]);
+  const products = (productsData?.products || []) as any[];
 
   const openAddModal = () => {
     setEditingProduct(null);
