@@ -10,6 +10,7 @@ import {
   ChevronDown,
   CalendarPlus,
   History,
+  Calendar,
   X,
 } from "lucide-react";
 
@@ -32,6 +33,10 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [showSyncOptions, setShowSyncOptions] = useState(false);
+  const [showCustomRange, setShowCustomRange] = useState(false);
+  const [customFromDate, setCustomFromDate] = useState("");
+  const [customToDate, setCustomToDate] = useState("");
+  const [customDateType, setCustomDateType] = useState<SyncMode>("CREATED");
   const [syncStatusMsg, setSyncStatusMsg] = useState<string | null>(null);
   const [syncError, setSyncError] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ fetched: number; upserted: number; failed: number } | null>(null);
@@ -63,16 +68,22 @@ export const Header: React.FC<HeaderProps> = ({
     };
   }, [isSyncing]);
 
-  const handleManualSync = async (mode: SyncMode) => {
+  const handleManualSync = async (
+    mode: SyncMode,
+    range?: { fromDate?: string; toDate?: string }
+  ) => {
     if (isSyncing) return;
 
     setIsSyncing(true);
     setShowSyncOptions(false);
+    setShowCustomRange(false);
     setSyncError(false);
     setSyncStatusMsg(
-      mode === "CREATED"
-        ? "Fetching newly created orders..."
-        : "Fetching updated orders..."
+      range?.fromDate
+        ? `Fetching ${mode.toLowerCase()} orders from ${range.fromDate.slice(0, 10)}...`
+        : mode === "CREATED"
+        ? "Fetching created orders since last sync..."
+        : "Fetching updated orders since last sync..."
     );
 
     try {
@@ -84,6 +95,8 @@ export const Header: React.FC<HeaderProps> = ({
         body: JSON.stringify({
           syncType: "MANUAL_TRIGGER",
           dateType: mode,
+          ...(range?.fromDate ? { fromDate: range.fromDate } : {}),
+          ...(range?.toDate ? { toDate: range.toDate } : {}),
         }),
       });
 
@@ -223,16 +236,15 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={() => handleManualSync("CREATED")}
-                className="w-full flex items-start gap-3 px-3 py-3 text-left hover:bg-stone-50 transition"
+                className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-stone-50 transition"
               >
                 <CalendarPlus className="w-4 h-4 mt-0.5 text-emerald-700 shrink-0" />
                 <span>
                   <span className="block text-xs font-medium text-stone-800">
-                    Created Sync
+                    Sync Created (Auto)
                   </span>
-                  <span className="block text-[11px] text-stone-500 mt-1">
-                    Fetch orders by creation date. Existing orders are updated,
-                    not duplicated.
+                  <span className="block text-[11px] text-stone-500 mt-0.5">
+                    Fetches newly created orders since last sync up to now.
                   </span>
                 </span>
               </button>
@@ -240,18 +252,109 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={() => handleManualSync("UPDATED")}
-                className="w-full flex items-start gap-3 px-3 py-3 text-left hover:bg-stone-50 transition"
+                className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-stone-50 transition"
               >
                 <History className="w-4 h-4 mt-0.5 text-[#a27b5c] shrink-0" />
                 <span>
                   <span className="block text-xs font-medium text-stone-800">
-                    Updated Sync
+                    Sync Updated (Auto)
                   </span>
-                  <span className="block text-[11px] text-stone-500 mt-1">
-                    Fetch orders by last update date.
+                  <span className="block text-[11px] text-stone-500 mt-0.5">
+                    Fetches recently modified/status-changed orders.
                   </span>
                 </span>
               </button>
+
+              <div className="border-t border-stone-100 my-1" />
+
+              <button
+                type="button"
+                onClick={() => setShowCustomRange((v) => !v)}
+                className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-stone-50 transition"
+              >
+                <Calendar className="w-4 h-4 mt-0.5 text-blue-600 shrink-0" />
+                <span>
+                  <span className="block text-xs font-medium text-stone-800">
+                    Custom Date Range...
+                  </span>
+                  <span className="block text-[11px] text-stone-500 mt-0.5">
+                    Specify exact From and To date & time to sync.
+                  </span>
+                </span>
+              </button>
+
+              {showCustomRange && (
+                <div className="px-3 py-2.5 bg-stone-50 border-t border-stone-100 mt-1 space-y-2">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-stone-600 uppercase">
+                      Sync By
+                    </label>
+                    <div className="flex gap-2 mt-1">
+                      <button
+                        type="button"
+                        onClick={() => setCustomDateType("CREATED")}
+                        className={`px-2 py-1 text-[11px] rounded font-medium border ${
+                          customDateType === "CREATED"
+                            ? "bg-[#38261b] text-white border-[#38261b]"
+                            : "bg-white text-stone-700 border-stone-200"
+                        }`}
+                      >
+                        Created Date
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCustomDateType("UPDATED")}
+                        className={`px-2 py-1 text-[11px] rounded font-medium border ${
+                          customDateType === "UPDATED"
+                            ? "bg-[#38261b] text-white border-[#38261b]"
+                            : "bg-white text-stone-700 border-stone-200"
+                        }`}
+                      >
+                        Updated Date
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-semibold text-stone-600">
+                      From Date & Time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={customFromDate}
+                      onChange={(e) => setCustomFromDate(e.target.value)}
+                      className="w-full mt-0.5 px-2 py-1 text-xs border border-stone-200 rounded bg-white text-stone-800 focus:outline-none focus:ring-1 focus:ring-[#a27b5c]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-semibold text-stone-600">
+                      To Date & Time (Optional)
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={customToDate}
+                      onChange={(e) => setCustomToDate(e.target.value)}
+                      className="w-full mt-0.5 px-2 py-1 text-xs border border-stone-200 rounded bg-white text-stone-800 focus:outline-none focus:ring-1 focus:ring-[#a27b5c]"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={!customFromDate}
+                    onClick={() => {
+                      if (!customFromDate) return;
+                      handleManualSync(customDateType, {
+                        fromDate: new Date(customFromDate).toISOString(),
+                        toDate: customToDate ? new Date(customToDate).toISOString() : new Date().toISOString(),
+                      });
+                    }}
+                    className="w-full mt-1 py-1.5 bg-[#a27b5c] hover:bg-[#8e6b4e] disabled:opacity-40 text-white rounded text-xs font-medium transition shadow-xs"
+                  >
+                    Start Custom Sync
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

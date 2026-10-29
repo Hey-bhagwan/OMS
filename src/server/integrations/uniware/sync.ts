@@ -36,6 +36,7 @@ export class UniwareSyncService {
   public async executeSync(
     syncType: "INITIAL" | "INCREMENTAL_POLL" | "MANUAL_TRIGGER",
     dateTypeOverride?: SyncDateType,
+    dateRangeOverride?: { fromDate?: string | Date; toDate?: string | Date },
   ): Promise<SyncRunResult> {
     const startedAt = new Date();
 
@@ -82,10 +83,30 @@ export class UniwareSyncService {
         dateTypeOverride ||
         (syncType === "INITIAL" ? "CREATED" : "UPDATED");
 
-      const toDate = new Date();
+      let toDate: Date;
+      if (dateRangeOverride?.toDate) {
+        toDate = new Date(dateRangeOverride.toDate);
+        if (Number.isNaN(toDate.getTime())) {
+          throw new Error("Invalid toDate provided");
+        }
+      } else {
+        toDate = new Date();
+      }
+
       let fromDate: Date;
 
-      if (process.env.UNIWARE_FROM_DATE) {
+      if (dateRangeOverride?.fromDate) {
+        fromDate = new Date(dateRangeOverride.fromDate);
+        if (Number.isNaN(fromDate.getTime())) {
+          throw new Error("Invalid fromDate provided");
+        }
+      } else if (checkpoint?.lastSuccessAt || checkpoint?.lastRunAt) {
+        // If previous sync exists, sync from last sync timestamp (with 15 min buffer) up to now
+        const lastSyncTime = new Date(
+          (checkpoint.lastSuccessAt || checkpoint.lastRunAt)!,
+        );
+        fromDate = new Date(lastSyncTime.getTime() - 15 * 60 * 1000);
+      } else if (process.env.UNIWARE_FROM_DATE) {
         const configuredDate = new Date(
           process.env.UNIWARE_FROM_DATE,
         );
@@ -101,8 +122,7 @@ export class UniwareSyncService {
         dateType === "CREATED" ||
         !checkpoint?.lastCheckpointValue
       ) {
-        // CREATED sync uses a lookback window.
-        // It does not depend on the UPDATED checkpoint.
+        // First sync fallback lookback window
         fromDate = new Date(
           toDate.getTime() -
             lookbackDays * 24 * 60 * 60 * 1000,

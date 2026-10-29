@@ -18,7 +18,7 @@ export async function GET() {
             'id', id,
             'stage', "internalStage",
             'deadline', "fulfillmentDeadline",
-            'created', "createdAt"
+            'created', coalesce("displayOrderDateTime", "createdAt")
           )), '[]'::json)
           FROM "Order"
           WHERE "internalStage" != 'CANCELLED'

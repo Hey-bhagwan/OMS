@@ -14,7 +14,11 @@ export async function POST(req: Request) {
       ? (body.dateType as "CREATED" | "UPDATED")
       : undefined;
 
-    const result = await uniwareSyncService.executeSync("MANUAL_TRIGGER", dateType);
+    const fromDate = body?.fromDate || undefined;
+    const toDate = body?.toDate || undefined;
+    const dateRange = (fromDate || toDate) ? { fromDate, toDate } : undefined;
+
+    const result = await uniwareSyncService.executeSync("MANUAL_TRIGGER", dateType, dateRange);
     return NextResponse.json(result);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
