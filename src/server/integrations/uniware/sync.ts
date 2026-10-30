@@ -3,6 +3,16 @@ import { uniwareClient } from "./client";
 import { workflowService } from "../../services/workflow.service";
 import { SyncStatus } from "@prisma/client";
 
+export interface SyncOrderSummary {
+  orderCode: string;
+  displayOrderCode?: string | null;
+  status: string;
+  internalStage: string;
+  city?: string;
+  itemsCount: number;
+  skuCode?: string;
+}
+
 export interface SyncRunResult {
   syncRunId: string;
   status: "SUCCESS" | "FAILED";
@@ -10,6 +20,7 @@ export interface SyncRunResult {
   recordsUpserted: number;
   recordsFailed: number;
   errorMessage?: string;
+  ordersSummary?: SyncOrderSummary[];
 }
 
 type InternalStage =
@@ -52,6 +63,7 @@ export class UniwareSyncService {
     let recordsFetched = 0;
     let recordsUpserted = 0;
     let recordsFailed = 0;
+    const ordersSummary: SyncOrderSummary[] = [];
 
     try {
       const checkpoint =
@@ -207,8 +219,18 @@ export class UniwareSyncService {
               );
             }
 
-            await this.processUniwareOrder(item.code, item);
+            const processedOrder = await this.processUniwareOrder(item.code, item);
             recordsUpserted++;
+            if (processedOrder) {
+              ordersSummary.push({
+                orderCode: processedOrder.uniwareOrderCode,
+                displayOrderCode: processedOrder.displayOrderCode,
+                status: processedOrder.uniwareStatus,
+                internalStage: processedOrder.internalStage,
+                city: processedOrder.shippingAddressCity || "-",
+                itemsCount: 1,
+              });
+            }
           } catch (itemErr: unknown) {
             console.error(
               `Failed to process Uniware order #${item?.code || "UNKNOWN"}:`,
@@ -303,6 +325,7 @@ export class UniwareSyncService {
         recordsFetched,
         recordsUpserted,
         recordsFailed,
+        ordersSummary,
         ...(recordsFailed > 0
           ? {
               errorMessage:
@@ -443,10 +466,9 @@ export class UniwareSyncService {
       String(pkg.status || "").toUpperCase(),
     );
 
-    const hasReadyToShipPackage = packageStatuses.some(
+    const hasShippedPackage = packageStatuses.some(
       (status: string) =>
         [
-          "READY_TO_SHIP",
           "SHIPPED",
           "DISPATCHED",
           "DELIVERED",
@@ -471,7 +493,7 @@ export class UniwareSyncService {
       ["COMPLETE", "DELIVERED", "SHIPPED"].includes(
         uniwareStatus,
       ) ||
-      hasReadyToShipPackage
+      hasShippedPackage
     ) {
       initialStage = "DELIVERY";
       nextAction =

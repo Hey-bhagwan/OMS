@@ -430,22 +430,24 @@ export class WorkflowService {
         nextActionDesc = `Complete ${isExport ? "export wooden crating" : "domestic packaging"} for ${totalOrderQty - totalPackedCompleted} unit(s)`;
       } else if (totalPackedCompleted >= totalOrderQty) {
         // All items packed
-        if (order.shipments && order.shipments.length > 0) {
-          const latestShipment = order.shipments[0];
-          if (latestShipment.normalizedStatus === "DELIVERED") {
+        const activeShipment = (order.shipments || []).find((s) =>
+          ["PICKED_UP", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED", "DELIVERY_EXCEPTION", "RTO", "RETURNED"].includes(s.normalizedStatus)
+        );
+        if (activeShipment) {
+          if (activeShipment.normalizedStatus === "DELIVERED") {
             detectedStage = "DELIVERY";
             nextActionDesc = "Delivered to recipient. Order fulfilled.";
-          } else if (latestShipment.normalizedStatus === "DELIVERY_EXCEPTION") {
+          } else if (activeShipment.normalizedStatus === "DELIVERY_EXCEPTION") {
             detectedStage = "DELIVERY_EXCEPTION";
-            activeBlocker = latestShipment.currentScanActivity || "Delivery exception flagged by courier";
+            activeBlocker = activeShipment.currentScanActivity || "Delivery exception flagged by courier";
             nextActionDesc = "Coordinate re-attempt or contact customer";
-          } else if (latestShipment.normalizedStatus === "RTO" || latestShipment.normalizedStatus === "RETURNED") {
+          } else if (activeShipment.normalizedStatus === "RTO" || activeShipment.normalizedStatus === "RETURNED") {
             detectedStage = "RTO";
             activeBlocker = "Shipment in Return to Origin";
             nextActionDesc = "Inspect returned goods upon warehouse arrival";
           } else {
             detectedStage = "DELIVERY";
-            nextActionDesc = `In transit via ${latestShipment.courierName} (AWB: ${latestShipment.awbWaybill})`;
+            nextActionDesc = `In transit via ${activeShipment.courierName} (AWB: ${activeShipment.awbWaybill})`;
           }
         } else {
           detectedStage = "DISPATCH";

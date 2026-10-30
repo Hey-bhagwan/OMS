@@ -316,6 +316,7 @@ export const OrdersView: React.FC<{ searchFilter?: string }> = ({ searchFilter }
             <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
               <tr>
                 <th className="py-2.5 px-4">Order Code</th>
+                <th className="py-2.5 px-4">Order Date</th>
                 <th className="py-2.5 px-4">Channel</th>
                 <th className="py-2.5 px-4">Items / SKU</th>
                 <th className="py-2.5 px-4 text-center">Total Qty</th>
@@ -330,11 +331,11 @@ export const OrdersView: React.FC<{ searchFilter?: string }> = ({ searchFilter }
             <tbody className="divide-y divide-stone-100">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-stone-400">Loading orders...</td>
+                  <td colSpan={11} className="py-12 text-center text-stone-400">Loading orders...</td>
                 </tr>
               ) : filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-stone-400">No orders found matching filters.</td>
+                  <td colSpan={11} className="py-12 text-center text-stone-400">No orders found matching filters.</td>
                 </tr>
               ) : (
                 filteredOrders.map((o) => (
@@ -344,6 +345,14 @@ export const OrdersView: React.FC<{ searchFilter?: string }> = ({ searchFilter }
                       {o.displayOrderCode && (
                         <span className="text-[10px] text-stone-500 block truncate">{o.displayOrderCode}</span>
                       )}
+                    </td>
+                    <td className="py-2.5 px-4 text-stone-600 whitespace-nowrap">
+                      <span className="text-stone-800 font-medium block">
+                        {formatShortDate(o.orderDate || o.createdAt)}
+                      </span>
+                      <span className="text-[10px] text-stone-400 block">
+                        {formatDate(o.orderDate || o.createdAt, "HH:mm")}
+                      </span>
                     </td>
                     <td className="py-2.5 px-4">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-stone-100 text-stone-700 border border-stone-200">
@@ -461,6 +470,10 @@ export const OrdersView: React.FC<{ searchFilter?: string }> = ({ searchFilter }
                 <div>
                   <span className="text-[10px] font-semibold text-stone-500 uppercase block">Packaging</span>
                   <span className="text-xs font-semibold text-purple-700">{selectedOrder.packagingType}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-semibold text-stone-500 uppercase block">Order Created Date</span>
+                  <span className="text-xs font-medium text-stone-800">{formatDate(selectedOrder.displayOrderDateTime || selectedOrder.createdAt)}</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-semibold text-stone-500 uppercase block">Fulfillment Deadline</span>

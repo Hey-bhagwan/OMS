@@ -68,6 +68,7 @@ export async function GET(req: NextRequest) {
           blockerReason: true,
           nextAction: true,
           createdAt: true,
+          displayOrderDateTime: true,
           lines: {
             select: {
               id: true,
@@ -117,6 +118,7 @@ export async function GET(req: NextRequest) {
         blockerReason: o.blockerReason,
         nextAction: o.nextAction,
         createdAt: o.createdAt,
+        orderDate: o.displayOrderDateTime || o.createdAt,
         totalItems: o.lines.reduce((sum, l) => sum + l.quantity, 0),
         items: o.lines.map((l) => ({
           id: l.id,
