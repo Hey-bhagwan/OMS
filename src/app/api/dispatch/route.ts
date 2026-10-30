@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db/prisma";
 import { getSessionUser } from "@/server/auth/session";
+import { STATUS_PRECEDENCE } from "@/server/integrations/shiprocket/parser";
 
 export async function GET(req: NextRequest) {
   try {
@@ -77,6 +78,25 @@ export async function POST(req: NextRequest) {
     const shipmentProvider = provider === "SHIPROCKET_CARGO" ? "SHIPROCKET_CARGO" : "SHIPROCKET";
     const courier = courierName || (shipmentProvider === "SHIPROCKET_CARGO" ? "Shiprocket Cargo" : "Blue Dart");
 
+    // Check if a shipment already exists for this AWB (e.g. created by an early webhook).
+    // If the webhook already advanced the status beyond PICKED_UP, preserve that status
+    // rather than regressing it back to PICKED_UP on a late handover entry.
+    const existingShipment = await prisma.shipment.findUnique({
+      where: {
+        provider_awbWaybill: {
+          provider: shipmentProvider,
+          awbWaybill: awbWaybill.trim(),
+        },
+      },
+    });
+
+    const HANDOVER_STATUS = "PICKED_UP";
+    const statusToSet =
+      existingShipment &&
+      STATUS_PRECEDENCE[existingShipment.normalizedStatus] > STATUS_PRECEDENCE[HANDOVER_STATUS]
+        ? existingShipment.normalizedStatus // Keep the more advanced status from the webhook
+        : HANDOVER_STATUS;
+
     // Upsert shipment record
     const shipment = await prisma.shipment.upsert({
       where: {
@@ -89,9 +109,14 @@ export async function POST(req: NextRequest) {
         orderId: order.id,
         uniwareOrderCode: order.uniwareOrderCode,
         courierName: courier,
-        normalizedStatus: "PICKED_UP",
-        dispatchedAt: new Date(),
-        currentScanActivity: "Handed over to carrier at warehouse dispatch dock",
+        normalizedStatus: statusToSet,
+        isUnmatched: false,
+        matchConfidence: "HANDOVER_MATCH",
+        dispatchedAt: existingShipment?.dispatchedAt ?? new Date(),
+        currentScanActivity:
+          statusToSet === HANDOVER_STATUS
+            ? "Handed over to carrier at warehouse dispatch dock"
+            : existingShipment?.currentScanActivity ?? "Handed over to carrier at warehouse dispatch dock",
       },
       create: {
         provider: shipmentProvider,
@@ -99,7 +124,7 @@ export async function POST(req: NextRequest) {
         orderId: order.id,
         uniwareOrderCode: order.uniwareOrderCode,
         courierName: courier,
-        normalizedStatus: "PICKED_UP",
+        normalizedStatus: HANDOVER_STATUS,
         dispatchedAt: new Date(),
         currentScanActivity: "Handed over to carrier at warehouse dispatch dock",
       },
@@ -116,6 +141,8 @@ export async function POST(req: NextRequest) {
         location: "Warehouse Dispatch Hub",
         eventTimestamp: new Date(),
       },
+    }).catch(() => {
+      // Idempotency: ignore duplicate event if already recorded
     });
 
     // Advance order to DELIVERY stage
@@ -163,7 +190,7 @@ export async function POST(req: NextRequest) {
         action: "DISPATCH_HANDOVER",
         actorId: user.id,
         actorEmail: user.email,
-        changesJson: JSON.stringify({ awbWaybill, courier, provider }),
+        changesJson: JSON.stringify({ awbWaybill, courier, provider, statusToSet }),
       },
     });
 
