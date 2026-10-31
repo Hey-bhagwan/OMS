@@ -162,14 +162,14 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
                   AWB: {selectedShipment.awb}
                 </h3>
                 <span className="text-xs text-stone-500">
-                  {selectedShipment.courier} â€¢ Order: {selectedShipment.orderCode}
+                  {selectedShipment.courier} • Order: {selectedShipment.orderCode}
                 </span>
               </div>
               <button
                 onClick={() => setSelectedShipment(null)}
                 className="text-stone-400 hover:text-stone-700 text-sm font-semibold"
               >
-                âœ•
+                ✕
               </button>
             </div>
 
@@ -186,7 +186,7 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
                       <div className="w-2 h-2 rounded-full bg-blue-500 absolute -left-[21px] top-1"></div>
                       <span className="font-semibold text-stone-900">{ev.activity}</span>
                       <span className="text-[10px] text-stone-400 block">
-                        {formatDate(ev.timestamp)} â€¢ Location: {ev.location || "In Transit"}
+                        {formatDate(ev.timestamp)} • Location: {ev.location || "In Transit"}
                       </span>
                     </div>
                   ))}

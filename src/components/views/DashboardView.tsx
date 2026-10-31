@@ -123,7 +123,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToTab, o
             onClick={() => onNavigateToTab("orders")}
             className="text-xs text-[#a27b5c] font-semibold hover:underline"
           >
-            View All Orders âž”
+            View All Orders ➔
           </button>
         </div>
 
@@ -194,19 +194,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToTab, o
                     <td className="py-2.5 px-4 font-mono text-[11px]">
                       <div className="space-y-0.5">
                         <span className="text-emerald-700 font-semibold block">
-                          â€¢ Packed: {o.allocatedPackedQty} / {o.quantity}
+                          • Packed: {o.allocatedPackedQty} / {o.quantity}
                         </span>
                         {o.allocatedUnpackedQty > 0 && (
-                          <span className="text-blue-700 block">â€¢ Unpacked: {o.allocatedUnpackedQty}</span>
+                          <span className="text-blue-700 block">• Unpacked: {o.allocatedUnpackedQty}</span>
                         )}
                         {o.requiredProductionQty > 0 && (
-                          <span className="text-stone-800 font-semibold block">â€¢ In Prod: {o.requiredProductionQty}</span>
+                          <span className="text-stone-800 font-semibold block">• In Prod: {o.requiredProductionQty}</span>
                         )}
                         {o.blockedRawMaterialQty > 0 && (
-                          <span className="text-red-700 font-bold block">â€¢ Blocked RM: {o.blockedRawMaterialQty}</span>
+                          <span className="text-red-700 font-bold block">• Blocked RM: {o.blockedRawMaterialQty}</span>
                         )}
                         {o.pendingAssessmentQty > 0 && (
-                          <span className="text-amber-700 font-bold block">â€¢ Pending RM: {o.pendingAssessmentQty}</span>
+                          <span className="text-amber-700 font-bold block">• Pending RM: {o.pendingAssessmentQty}</span>
                         )}
                       </div>
                     </td>
@@ -229,7 +229,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToTab, o
                       ) : o.lastActivity ? (
                         <p className="text-[11px] text-stone-500 truncate">{o.lastActivity}</p>
                       ) : (
-                        <span className="text-stone-400 text-[11px]">â€”</span>
+                        <span className="text-stone-400 text-[11px]">—</span>
                       )}
                     </td>
                     <td className="py-2.5 px-4 text-right no-print">

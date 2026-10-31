@@ -453,7 +453,7 @@ export const RawMaterialView: React.FC<{
                   {modalMode === "HISTORY" && "Decision & Remark History"}
                 </h3>
                 <span className="text-[11px] text-stone-500">
-                  Order #{selectedBlock.orderCode} â€¢ SKU: {selectedBlock.skuCode}
+                  Order #{selectedBlock.orderCode} • SKU: {selectedBlock.skuCode}
                 </span>
               </div>
               <button
@@ -577,7 +577,7 @@ export const RawMaterialView: React.FC<{
                       <option value="">Select Staff Member</option>
                       {users.map((u) => (
                         <option key={u.id} value={u.id}>
-                          {u.name} ({u.role}) â€” {u.email}
+                          {u.name} ({u.role}) — {u.email}
                         </option>
                       ))}
                     </select>

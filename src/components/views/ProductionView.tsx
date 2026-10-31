@@ -379,7 +379,7 @@ export const ProductionView: React.FC<{ searchFilter?: string; onNavigateToOrder
                   {modalType === "REMARK" && "Add Production Remark"}
                 </h3>
                 <span className="text-[11px] text-stone-500">
-                  Work Order #{selectedTask.code} â€¢ SKU: {selectedTask.skuCode}
+                  Work Order #{selectedTask.code} • SKU: {selectedTask.skuCode}
                 </span>
               </div>
               <button
