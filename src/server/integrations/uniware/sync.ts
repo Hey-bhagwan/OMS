@@ -826,6 +826,85 @@ export class UniwareSyncService {
       await workflowService.allocateOrder(order.id);
     }
 
+    // Reconcile order stage against any Shipment record already linked to this order.
+    // Covers the late-sync scenario: a webhook stored a shipment before this order was synced,
+    // so the order got an initial stage (RAW_MATERIAL / PRODUCTION) that doesn't reflect
+    // the shipment's actual progress.
+    //
+    // Mapping (mirrors webhook handler in shiprocket/service.ts):
+    //   SHIPMENT_CREATED / READY_FOR_PICKUP  → DISPATCH  (guard: only if pre-dispatch)
+    //   PICKED_UP / IN_TRANSIT / OUT_FOR_DELIVERY / UNDELIVERED / DELIVERED → DELIVERY (guard: only if pre-delivery)
+    const linkedShipment = await prisma.shipment.findFirst({
+      where: {
+        orderId: order.id,
+        isUnmatched: false,
+        normalizedStatus: {
+          in: [
+            "SHIPMENT_CREATED",
+            "READY_FOR_PICKUP",
+            "PICKED_UP",
+            "IN_TRANSIT",
+            "OUT_FOR_DELIVERY",
+            "UNDELIVERED",
+            "DELIVERED",
+          ],
+        },
+      },
+      orderBy: { updatedAt: "desc" }, // use the most recently updated shipment
+    });
+
+    if (linkedShipment) {
+      const freshOrder = await prisma.order.findUnique({
+        where: { id: order.id },
+        select: { internalStage: true },
+      });
+
+      if (freshOrder) {
+        const preDispatchStages = ["RAW_MATERIAL", "PRODUCTION", "PACKING"];
+        const preDeliveryStages = [...preDispatchStages, "DISPATCH"];
+
+        let impliedStage: "DISPATCH" | "DELIVERY" | null = null;
+
+        if (
+          linkedShipment.normalizedStatus === "SHIPMENT_CREATED" ||
+          linkedShipment.normalizedStatus === "READY_FOR_PICKUP"
+        ) {
+          if (preDispatchStages.includes(freshOrder.internalStage)) {
+            impliedStage = "DISPATCH";
+          }
+        } else if (
+          linkedShipment.normalizedStatus === "PICKED_UP" ||
+          linkedShipment.normalizedStatus === "IN_TRANSIT" ||
+          linkedShipment.normalizedStatus === "OUT_FOR_DELIVERY" ||
+          linkedShipment.normalizedStatus === "UNDELIVERED" ||
+          linkedShipment.normalizedStatus === "DELIVERED"
+        ) {
+          if (preDeliveryStages.includes(freshOrder.internalStage)) {
+            impliedStage = "DELIVERY";
+          }
+        }
+
+        if (impliedStage) {
+          await prisma.order.update({
+            where: { id: order.id },
+            data: {
+              internalStage: impliedStage,
+              nextAction: `Sync reconciliation: shipment ${linkedShipment.normalizedStatus} via ${linkedShipment.courierName} (AWB: ${linkedShipment.awbWaybill})`,
+              blockerReason: null,
+            },
+          });
+
+          await prisma.orderStatusHistory.create({
+            data: {
+              orderId: order.id,
+              toStage: impliedStage,
+              reason: `Sync: existing shipment AWB ${linkedShipment.awbWaybill} (${linkedShipment.normalizedStatus}) found — stage advanced automatically`,
+            },
+          });
+        }
+      }
+    }
+
     return order;
   }
 }

@@ -131,9 +131,20 @@ export class ShipmentService {
       // Idempotency constraint prevents duplicate insert
     });
 
-    // 5. If matched to an order and status is DELIVERED, transition order to DELIVERY
+    // 5. Transition order stage based on shipment status (if matched to an order).
+    //
+    //    Mapping:
+    //      SHIPMENT_CREATED / READY_FOR_PICKUP          → DISPATCH  (guard: only if order is pre-dispatch)
+    //      PICKED_UP / IN_TRANSIT / OUT_FOR_DELIVERY
+    //        / UNDELIVERED                              → DELIVERY  (guard: only if order is pre-delivery)
+    //      DELIVERED                                    → DELIVERY  (existing behaviour, no guard needed)
+    //      DELIVERY_EXCEPTION                           → DELIVERY_EXCEPTION (existing behaviour)
+    //      RTO / RETURNED                               → RTO (existing behaviour)
+    //
+    //    Orders already at or beyond the implied target stage are never regressed.
     if (matchedOrderId) {
       if (parsed.normalizedStatus === "DELIVERED") {
+        // Terminal positive state — always update regardless of current stage.
         await prisma.order.update({
           where: { id: matchedOrderId },
           data: {
@@ -168,6 +179,68 @@ export class ShipmentService {
             nextAction: "Inspect return parcel upon arrival at warehouse",
           },
         });
+      } else if (
+        parsed.normalizedStatus === "SHIPMENT_CREATED" ||
+        parsed.normalizedStatus === "READY_FOR_PICKUP"
+      ) {
+        // Shipment created / scheduled for pickup → advance order to DISPATCH.
+        // Guard: only move forward if the order is still in a pre-dispatch stage.
+        const order = await prisma.order.findUnique({
+          where: { id: matchedOrderId },
+          select: { internalStage: true },
+        });
+
+        const preDispatchStages = ["RAW_MATERIAL", "PRODUCTION", "PACKING"];
+        if (order && preDispatchStages.includes(order.internalStage)) {
+          await prisma.order.update({
+            where: { id: matchedOrderId },
+            data: {
+              internalStage: "DISPATCH",
+              nextAction: `Shipment created via ${parsed.courierName} (AWB: ${parsed.awbWaybill}). Awaiting courier pickup.`,
+              blockerReason: null,
+            },
+          });
+
+          await prisma.orderStatusHistory.create({
+            data: {
+              orderId: matchedOrderId,
+              toStage: "DISPATCH",
+              reason: `Webhook: ${parsed.normalizedStatus} — AWB ${parsed.awbWaybill} via ${parsed.courierName}`,
+            },
+          });
+        }
+      } else if (
+        parsed.normalizedStatus === "PICKED_UP" ||
+        parsed.normalizedStatus === "IN_TRANSIT" ||
+        parsed.normalizedStatus === "OUT_FOR_DELIVERY" ||
+        parsed.normalizedStatus === "UNDELIVERED"
+      ) {
+        // Shipment picked up or actively in motion → advance order to DELIVERY.
+        // Guard: only move forward if the order has not yet reached DELIVERY or a terminal state.
+        const order = await prisma.order.findUnique({
+          where: { id: matchedOrderId },
+          select: { internalStage: true },
+        });
+
+        const preDeliveryStages = ["RAW_MATERIAL", "PRODUCTION", "PACKING", "DISPATCH"];
+        if (order && preDeliveryStages.includes(order.internalStage)) {
+          await prisma.order.update({
+            where: { id: matchedOrderId },
+            data: {
+              internalStage: "DELIVERY",
+              nextAction: `In transit via ${parsed.courierName} (AWB: ${parsed.awbWaybill}) — status: ${parsed.normalizedStatus}`,
+              blockerReason: null,
+            },
+          });
+
+          await prisma.orderStatusHistory.create({
+            data: {
+              orderId: matchedOrderId,
+              toStage: "DELIVERY",
+              reason: `Webhook: ${parsed.normalizedStatus} — AWB ${parsed.awbWaybill} via ${parsed.courierName}`,
+            },
+          });
+        }
       }
     }
 
