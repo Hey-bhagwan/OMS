@@ -4,6 +4,48 @@ import { NormalizedShipmentEvent } from "./types";
 
 export class ShipmentService {
   /**
+   * Reset order-line quantities and resolve any raw-material blocks when an
+   * order is force-advanced to DISPATCH or DELIVERY via a webhook or sync
+   * reconciliation, bypassing the normal inventory-allocation flow.
+   *
+   * Without this, the dashboard allocation breakdown still shows
+   * "Pending RM" or "Blocked RM" even though the order has shipped.
+   */
+  private async cleanupOrderLinesOnShipmentAdvance(orderId: string): Promise<void> {
+    const lines = await prisma.orderLine.findMany({
+      where: { orderId },
+      select: { id: true, quantity: true },
+    });
+
+    for (const line of lines) {
+      await prisma.orderLine.update({
+        where: { id: line.id },
+        data: {
+          pendingAssessmentQty: 0,
+          blockedRawMaterialQty: 0,
+          requiredProductionQty: 0,
+          allocatedUnpackedQty: 0,
+          allocatedPackedQty: line.quantity,
+          packedCompletedQty: line.quantity,
+          dispatchReadyQty: line.quantity,
+        },
+      });
+    }
+
+    // Resolve any active raw-material blocks so the queue no longer flags the order.
+    await prisma.rawMaterialBlock.updateMany({
+      where: {
+        orderId,
+        status: { in: ["PENDING_ASSESSMENT", "BLOCKED"] },
+      },
+      data: {
+        status: "RESOLVED",
+        resolvedAt: new Date(),
+      },
+    });
+  }
+
+  /**
    * Ingest and process a webhook from Shiprocket or Shiprocket Cargo
    */
   public async handleWebhook(payload: unknown, providerHeader?: string) {
@@ -208,6 +250,9 @@ export class ShipmentService {
               reason: `Webhook: ${parsed.normalizedStatus} — AWB ${parsed.awbWaybill} via ${parsed.courierName}`,
             },
           });
+
+          // Fix allocation breakdown: clear raw-material quantities since the order has shipped.
+          await this.cleanupOrderLinesOnShipmentAdvance(matchedOrderId);
         }
       } else if (
         parsed.normalizedStatus === "PICKED_UP" ||
@@ -240,6 +285,9 @@ export class ShipmentService {
               reason: `Webhook: ${parsed.normalizedStatus} — AWB ${parsed.awbWaybill} via ${parsed.courierName}`,
             },
           });
+
+          // Fix allocation breakdown: clear raw-material quantities since the order has shipped.
+          await this.cleanupOrderLinesOnShipmentAdvance(matchedOrderId);
         }
       }
     }

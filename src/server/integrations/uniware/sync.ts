@@ -555,7 +555,7 @@ export class UniwareSyncService {
         false,
     );
 
-    const order = await prisma.order.upsert({
+    let order = await prisma.order.upsert({
       where: { uniwareOrderCode },
 
       update: {
@@ -885,12 +885,15 @@ export class UniwareSyncService {
         }
 
         if (impliedStage) {
-          await prisma.order.update({
+          // Update the order stage and capture the result so the return value
+          // reflects the reconciled stage (fixes sync popup showing wrong stage).
+          order = await prisma.order.update({
             where: { id: order.id },
             data: {
               internalStage: impliedStage,
               nextAction: `Sync reconciliation: shipment ${linkedShipment.normalizedStatus} via ${linkedShipment.courierName} (AWB: ${linkedShipment.awbWaybill})`,
               blockerReason: null,
+              rawMaterialDecision: null,
             },
           });
 
@@ -899,6 +902,42 @@ export class UniwareSyncService {
               orderId: order.id,
               toStage: impliedStage,
               reason: `Sync: existing shipment AWB ${linkedShipment.awbWaybill} (${linkedShipment.normalizedStatus}) found — stage advanced automatically`,
+            },
+          });
+
+          // Fix allocation breakdown: the order was force-advanced past the normal
+          // inventory allocation flow, so order line quantities still reflect the
+          // RAW_MATERIAL/PRODUCTION state. Reset them to reflect a fully dispatched order.
+          const orderLines = await prisma.orderLine.findMany({
+            where: { orderId: order.id },
+            select: { id: true, quantity: true },
+          });
+
+          for (const line of orderLines) {
+            await prisma.orderLine.update({
+              where: { id: line.id },
+              data: {
+                pendingAssessmentQty: 0,
+                blockedRawMaterialQty: 0,
+                requiredProductionQty: 0,
+                allocatedUnpackedQty: 0,
+                allocatedPackedQty: line.quantity,
+                packedCompletedQty: line.quantity,
+                dispatchReadyQty: line.quantity,
+              },
+            });
+          }
+
+          // Resolve any active RawMaterialBlock entries so the Raw Material queue
+          // no longer shows this order as pending/blocked.
+          await prisma.rawMaterialBlock.updateMany({
+            where: {
+              orderId: order.id,
+              status: { in: ["PENDING_ASSESSMENT", "BLOCKED"] },
+            },
+            data: {
+              status: "RESOLVED",
+              resolvedAt: new Date(),
             },
           });
         }
