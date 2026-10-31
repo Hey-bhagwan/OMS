@@ -5,7 +5,7 @@ import { Send, CheckCircle2 } from "lucide-react";
 import { formatShortDate } from "@/lib/utils";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 
-export const DispatchView: React.FC<{ searchFilter?: string }> = ({ searchFilter }) => {
+export const DispatchView: React.FC<{ searchFilter?: string; onNavigateToOrder?: (orderId: string) => void }> = ({ searchFilter, onNavigateToOrder }) => {
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [courierName, setCourierName] = useState("Blue Dart");
   const [awbWaybill, setAwbWaybill] = useState("");
@@ -114,7 +114,11 @@ export const DispatchView: React.FC<{ searchFilter?: string }> = ({ searchFilter
                 filtered.map((o) => (
                   <tr key={o.id} className="hover:bg-stone-50/70 transition">
                     <td className="py-2.5 px-4 font-mono font-medium text-stone-900">
-                      {o.orderCode}
+                    <span
+                      className="cursor-pointer hover:text-[#a27b5c] hover:underline"
+                      onClick={() => onNavigateToOrder?.(o.id)}
+                      title="Click to view in All Orders"
+                    >{o.orderCode}</span>
                       {o.displayOrderCode && (
                         <span className="block text-[10px] text-stone-400 font-sans">{o.displayOrderCode}</span>
                       )}

@@ -37,6 +37,7 @@ export async function GET(req: NextRequest) {
         awb: s.awbWaybill,
         courier: s.courierName,
         status: s.normalizedStatus,
+        orderId: s.order?.id || null,
         orderCode: s.order?.uniwareOrderCode || s.uniwareOrderCode || "Unmatched",
         displayOrderCode: s.order?.displayOrderCode,
         destinationCity: s.order?.shippingAddressCity || s.currentScanLocation,

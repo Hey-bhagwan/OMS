@@ -18,7 +18,7 @@ import {
 import { formatShortDate, formatDate } from "@/lib/utils";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 
-export const ProductionView: React.FC<{ searchFilter?: string }> = ({ searchFilter }) => {
+export const ProductionView: React.FC<{ searchFilter?: string; onNavigateToOrder?: (orderId: string) => void }> = ({ searchFilter, onNavigateToOrder }) => {
   const [statusFilter, setStatusFilter] = useState("");
   const [localSearch, setLocalSearch] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -283,7 +283,11 @@ export const ProductionView: React.FC<{ searchFilter?: string }> = ({ searchFilt
                       <span className="text-[10px] text-stone-500 block truncate max-w-xs">{t.skuName}</span>
                     </td>
                     <td className="py-2.5 px-4">
-                      <span className="font-mono text-stone-700 block">{t.orderCode}</span>
+                      <span
+                      className="font-mono text-stone-700 block cursor-pointer hover:text-[#a27b5c] hover:underline"
+                      onClick={() => t.orderId && onNavigateToOrder?.(t.orderId)}
+                      title={t.orderId ? "Click to view in All Orders" : undefined}
+                    >{t.orderCode}</span>
                       {t.displayOrderCode && (
                         <span className="text-[10px] text-stone-400 block truncate">{t.displayOrderCode}</span>
                       )}
@@ -375,7 +379,7 @@ export const ProductionView: React.FC<{ searchFilter?: string }> = ({ searchFilt
                   {modalType === "REMARK" && "Add Production Remark"}
                 </h3>
                 <span className="text-[11px] text-stone-500">
-                  Work Order #{selectedTask.code} • SKU: {selectedTask.skuCode}
+                  Work Order #{selectedTask.code} â€¢ SKU: {selectedTask.skuCode}
                 </span>
               </div>
               <button

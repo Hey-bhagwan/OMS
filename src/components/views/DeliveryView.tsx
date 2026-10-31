@@ -5,7 +5,7 @@ import { Truck, AlertTriangle, CheckCircle2, Clock, MapPin } from "lucide-react"
 import { formatDate, formatShortDate } from "@/lib/utils";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 
-export const DeliveryView: React.FC<{ searchFilter?: string }> = ({ searchFilter }) => {
+export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?: (orderId: string) => void }> = ({ searchFilter, onNavigateToOrder }) => {
   const [filter, setFilter] = useState("");
   const [selectedShipment, setSelectedShipment] = useState<any | null>(null);
 
@@ -109,7 +109,13 @@ export const DeliveryView: React.FC<{ searchFilter?: string }> = ({ searchFilter
                     <tr key={s.id} className="hover:bg-stone-50/70 transition">
                       <td className="py-2.5 px-4 font-mono font-medium text-stone-900">{s.awb}</td>
                       <td className="py-2.5 px-4 font-medium text-stone-700">{s.courier}</td>
-                      <td className="py-2.5 px-4 font-mono text-stone-600">{s.orderCode}</td>
+                      <td className="py-2.5 px-4 font-mono text-stone-600">
+                      <span
+                        className={s.orderId ? "cursor-pointer hover:text-[#a27b5c] hover:underline" : ""}
+                        onClick={() => s.orderId && onNavigateToOrder?.(s.orderId)}
+                        title={s.orderId ? "Click to view in All Orders" : undefined}
+                      >{s.orderCode}</span>
+                    </td>
                       <td className="py-2.5 px-4">
                         <span
                           className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -156,14 +162,14 @@ export const DeliveryView: React.FC<{ searchFilter?: string }> = ({ searchFilter
                   AWB: {selectedShipment.awb}
                 </h3>
                 <span className="text-xs text-stone-500">
-                  {selectedShipment.courier} • Order: {selectedShipment.orderCode}
+                  {selectedShipment.courier} â€¢ Order: {selectedShipment.orderCode}
                 </span>
               </div>
               <button
                 onClick={() => setSelectedShipment(null)}
                 className="text-stone-400 hover:text-stone-700 text-sm font-semibold"
               >
-                ✕
+                âœ•
               </button>
             </div>
 
@@ -180,7 +186,7 @@ export const DeliveryView: React.FC<{ searchFilter?: string }> = ({ searchFilter
                       <div className="w-2 h-2 rounded-full bg-blue-500 absolute -left-[21px] top-1"></div>
                       <span className="font-semibold text-stone-900">{ev.activity}</span>
                       <span className="text-[10px] text-stone-400 block">
-                        {formatDate(ev.timestamp)} • Location: {ev.location || "In Transit"}
+                        {formatDate(ev.timestamp)} â€¢ Location: {ev.location || "In Transit"}
                       </span>
                     </div>
                   ))}

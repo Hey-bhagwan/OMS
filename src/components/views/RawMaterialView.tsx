@@ -298,7 +298,11 @@ export const RawMaterialView: React.FC<{
                 blocks.map((b) => (
                   <tr key={b.id} className="hover:bg-stone-50/70 transition align-top">
                     <td className="py-2.5 px-4">
-                      <span className="font-mono font-bold text-stone-900 block">{b.orderCode}</span>
+                      <span
+                        className="font-mono font-bold text-stone-900 block cursor-pointer hover:text-[#a27b5c] hover:underline"
+                        onClick={() => b.orderId && onNavigateToOrder?.(b.orderId)}
+                        title="Click to view in All Orders"
+                      >{b.orderCode}</span>
                       {b.displayOrderCode && (
                         <span className="text-[10px] text-stone-500 block truncate">{b.displayOrderCode}</span>
                       )}
@@ -449,7 +453,7 @@ export const RawMaterialView: React.FC<{
                   {modalMode === "HISTORY" && "Decision & Remark History"}
                 </h3>
                 <span className="text-[11px] text-stone-500">
-                  Order #{selectedBlock.orderCode} • SKU: {selectedBlock.skuCode}
+                  Order #{selectedBlock.orderCode} â€¢ SKU: {selectedBlock.skuCode}
                 </span>
               </div>
               <button
@@ -573,7 +577,7 @@ export const RawMaterialView: React.FC<{
                       <option value="">Select Staff Member</option>
                       {users.map((u) => (
                         <option key={u.id} value={u.id}>
-                          {u.name} ({u.role}) — {u.email}
+                          {u.name} ({u.role}) â€” {u.email}
                         </option>
                       ))}
                     </select>

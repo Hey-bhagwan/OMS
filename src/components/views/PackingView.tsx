@@ -5,7 +5,7 @@ import { PackageCheck, CheckCircle2 } from "lucide-react";
 import { formatShortDate } from "@/lib/utils";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 
-export const PackingView: React.FC<{ searchFilter?: string }> = ({ searchFilter }) => {
+export const PackingView: React.FC<{ searchFilter?: string; onNavigateToOrder?: (orderId: string) => void }> = ({ searchFilter, onNavigateToOrder }) => {
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
@@ -118,7 +118,13 @@ export const PackingView: React.FC<{ searchFilter?: string }> = ({ searchFilter 
                 filtered.map((t) => (
                   <tr key={t.id} className="hover:bg-stone-50/70 transition align-top">
                     <td className="py-3 px-4 font-mono font-medium text-stone-900">{t.code}</td>
-                    <td className="py-3 px-4 font-mono text-stone-600">{t.orderCode}</td>
+                    <td className="py-3 px-4">
+                      <span
+                        className="font-mono text-stone-600 cursor-pointer hover:text-[#a27b5c] hover:underline"
+                        onClick={() => t.orderId && onNavigateToOrder?.(t.orderId)}
+                        title="Click to view in All Orders"
+                      >{t.orderCode}</span>
+                    </td>
                     <td className="py-3 px-4">
                       <span className="font-semibold text-stone-800 block">{t.skuCode}</span>
                       <span className="text-[10px] text-stone-500 block truncate max-w-xs">{t.skuName}</span>

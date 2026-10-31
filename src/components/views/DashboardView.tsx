@@ -23,10 +23,11 @@ import { useCachedFetch } from "@/lib/useCachedFetch";
 
 interface DashboardViewProps {
   onNavigateToTab: (tab: any, filter?: any) => void;
+  onNavigateToOrder?: (orderId: string) => void;
   searchFilter?: string;
 }
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToTab, searchFilter }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToTab, onNavigateToOrder, searchFilter }) => {
   const { data, loading, isBackgroundFetching, refetch } = useCachedFetch<any>("/api/dashboard/stats");
 
   if (loading) {
@@ -122,7 +123,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToTab, s
             onClick={() => onNavigateToTab("orders")}
             className="text-xs text-[#a27b5c] font-semibold hover:underline"
           >
-            View All Orders ➔
+            View All Orders âž”
           </button>
         </div>
 
@@ -152,7 +153,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToTab, s
                 priorityOrders.map((o: any) => (
                   <tr key={o.id} className="hover:bg-stone-50/70 transition align-top">
                     <td className="py-2.5 px-4">
-                      <span className="font-mono font-bold text-stone-900 block">{o.orderCode}</span>
+                      <span
+                        className="font-mono font-bold text-stone-900 block cursor-pointer hover:text-[#a27b5c] hover:underline"
+                        onClick={() => onNavigateToOrder?.(o.id)}
+                        title="Click to view in All Orders"
+                      >{o.orderCode}</span>
                       {o.displayOrderCode && (
                         <span className="text-[10px] text-stone-500 block truncate">{o.displayOrderCode}</span>
                       )}
@@ -189,19 +194,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToTab, s
                     <td className="py-2.5 px-4 font-mono text-[11px]">
                       <div className="space-y-0.5">
                         <span className="text-emerald-700 font-semibold block">
-                          • Packed: {o.allocatedPackedQty} / {o.quantity}
+                          â€¢ Packed: {o.allocatedPackedQty} / {o.quantity}
                         </span>
                         {o.allocatedUnpackedQty > 0 && (
-                          <span className="text-blue-700 block">• Unpacked: {o.allocatedUnpackedQty}</span>
+                          <span className="text-blue-700 block">â€¢ Unpacked: {o.allocatedUnpackedQty}</span>
                         )}
                         {o.requiredProductionQty > 0 && (
-                          <span className="text-stone-800 font-semibold block">• In Prod: {o.requiredProductionQty}</span>
+                          <span className="text-stone-800 font-semibold block">â€¢ In Prod: {o.requiredProductionQty}</span>
                         )}
                         {o.blockedRawMaterialQty > 0 && (
-                          <span className="text-red-700 font-bold block">• Blocked RM: {o.blockedRawMaterialQty}</span>
+                          <span className="text-red-700 font-bold block">â€¢ Blocked RM: {o.blockedRawMaterialQty}</span>
                         )}
                         {o.pendingAssessmentQty > 0 && (
-                          <span className="text-amber-700 font-bold block">• Pending RM: {o.pendingAssessmentQty}</span>
+                          <span className="text-amber-700 font-bold block">â€¢ Pending RM: {o.pendingAssessmentQty}</span>
                         )}
                       </div>
                     </td>
@@ -224,7 +229,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToTab, s
                       ) : o.lastActivity ? (
                         <p className="text-[11px] text-stone-500 truncate">{o.lastActivity}</p>
                       ) : (
-                        <span className="text-stone-400 text-[11px]">—</span>
+                        <span className="text-stone-400 text-[11px]">â€”</span>
                       )}
                     </td>
                     <td className="py-2.5 px-4 text-right no-print">

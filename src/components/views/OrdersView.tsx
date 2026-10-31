@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Download,
   Printer,
@@ -68,7 +68,11 @@ function getValidForwardStages(currentStage: string): { stage: string; label: st
   }
 }
 
-export const OrdersView: React.FC<{ searchFilter?: string }> = ({ searchFilter }) => {
+export const OrdersView: React.FC<{
+  searchFilter?: string;
+  highlightOrderId?: string | null;
+  onHighlightClear?: () => void;
+}> = ({ searchFilter, highlightOrderId, onHighlightClear }) => {
   const [stageFilter, setStageFilter] = useState<string>("");
   const [channelFilter, setChannelFilter] = useState<string>("");
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
@@ -85,6 +89,10 @@ export const OrdersView: React.FC<{ searchFilter?: string }> = ({ searchFilter }
   const [rmRemark, setRmRemark] = useState("");
   const [rmSubmitting, setRmSubmitting] = useState(false);
 
+  // Row refs for highlight scroll
+  const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
+  const [activeHighlight, setActiveHighlight] = useState<string | null>(null);
+
   let ordersUrl = "/api/orders?limit=50";
   if (stageFilter) ordersUrl += `&stage=${stageFilter}`;
   if (channelFilter) ordersUrl += `&channel=${channelFilter}`;
@@ -97,6 +105,32 @@ export const OrdersView: React.FC<{ searchFilter?: string }> = ({ searchFilter }
   } = useCachedFetch<any>(ordersUrl);
 
   const orders = (ordersData?.orders || []) as any[];
+
+  // When highlightOrderId changes, clear filters so the order is visible, then scroll & highlight
+  useEffect(() => {
+    if (!highlightOrderId) return;
+
+    // Clear filters so the target order appears in the list
+    setStageFilter("");
+    setChannelFilter("");
+    setActiveHighlight(highlightOrderId);
+  }, [highlightOrderId]);
+
+  // After orders load (or filter reset), attempt scroll
+  useEffect(() => {
+    if (!activeHighlight) return;
+
+    const el = rowRefs.current.get(activeHighlight);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      // Auto-clear highlight after 2.5s
+      const timer = setTimeout(() => {
+        setActiveHighlight(null);
+        onHighlightClear?.();
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [activeHighlight, orders]);
 
   const viewOrderDetails = async (orderId: string) => {
     try {
@@ -339,7 +373,18 @@ export const OrdersView: React.FC<{ searchFilter?: string }> = ({ searchFilter }
                 </tr>
               ) : (
                 filteredOrders.map((o) => (
-                  <tr key={o.id} className="hover:bg-stone-50/70 transition align-top">
+                  <tr
+                    key={o.id}
+                    ref={(el) => {
+                      if (el) rowRefs.current.set(o.id, el);
+                      else rowRefs.current.delete(o.id);
+                    }}
+                    className={`hover:bg-stone-50/70 transition align-top ${
+                      activeHighlight === o.id
+                        ? "ring-2 ring-inset ring-[#a27b5c] bg-amber-50/60"
+                        : ""
+                    }`}
+                  >
                     <td className="py-2.5 px-4">
                       <span className="font-mono font-bold text-stone-900 block">{o.uniwareOrderCode}</span>
                       {o.displayOrderCode && (
@@ -495,7 +540,7 @@ export const OrdersView: React.FC<{ searchFilter?: string }> = ({ searchFilter }
               {/* Line Items & Allocation Breakdown */}
               <div>
                 <h4 className="text-xs font-semibold text-stone-900 uppercase tracking-wider mb-2">
-                  Line Items & Inventory Allocation
+                  Line Items &amp; Inventory Allocation
                 </h4>
                 <div className="space-y-3">
                   {selectedOrder.lines?.map((line: any) => (
@@ -640,7 +685,7 @@ export const OrdersView: React.FC<{ searchFilter?: string }> = ({ searchFilter }
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-semibold text-stone-900 uppercase tracking-wider flex items-center space-x-1.5">
                     <MessageSquare className="w-3.5 h-3.5 text-[#a27b5c]" />
-                    <span>Activity & Internal Communication</span>
+                    <span>Activity &amp; Internal Communication</span>
                   </h4>
 
                   {/* Filter Pills */}

@@ -30,6 +30,9 @@ export default function Home() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
+  // Navigate-to-order state
+  const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
+
   const checkAuth = async () => {
     try {
       const res = await fetch("/api/auth/me");
@@ -49,6 +52,12 @@ export default function Home() {
   useEffect(() => {
     checkAuth();
   }, []);
+
+  // Navigate to All Orders tab and highlight a specific order row
+  const handleNavigateToOrder = (orderId: string) => {
+    setHighlightOrderId(orderId);
+    setActiveTab("orders");
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,7 +102,7 @@ export default function Home() {
               K
             </div>
             <h1 className="text-xl font-bold text-stone-900 tracking-tight pt-2">Koa Living OMS</h1>
-            <p className="text-xs text-stone-500">Sign in to access centralized operations & inventory management</p>
+            <p className="text-xs text-stone-500">Sign in to access centralized operations &amp; inventory management</p>
           </div>
 
           {loginError && (
@@ -147,19 +156,63 @@ export default function Home() {
   const renderActiveView = () => {
     switch (activeTab) {
       case "dashboard":
-        return <DashboardView key={refreshKey} onNavigateToTab={(t) => setActiveTab(t)} searchFilter={searchQuery} />;
+        return (
+          <DashboardView
+            key={refreshKey}
+            onNavigateToTab={(t) => setActiveTab(t)}
+            onNavigateToOrder={handleNavigateToOrder}
+            searchFilter={searchQuery}
+          />
+        );
       case "orders":
-        return <OrdersView key={refreshKey} searchFilter={searchQuery} />;
+        return (
+          <OrdersView
+            key={refreshKey}
+            searchFilter={searchQuery}
+            highlightOrderId={highlightOrderId}
+            onHighlightClear={() => setHighlightOrderId(null)}
+          />
+        );
       case "raw_material":
-        return <RawMaterialView key={refreshKey} searchFilter={searchQuery} />;
+        return (
+          <RawMaterialView
+            key={refreshKey}
+            searchFilter={searchQuery}
+            onNavigateToOrder={handleNavigateToOrder}
+          />
+        );
       case "production":
-        return <ProductionView key={refreshKey} searchFilter={searchQuery} />;
+        return (
+          <ProductionView
+            key={refreshKey}
+            searchFilter={searchQuery}
+            onNavigateToOrder={handleNavigateToOrder}
+          />
+        );
       case "packing":
-        return <PackingView key={refreshKey} searchFilter={searchQuery} />;
+        return (
+          <PackingView
+            key={refreshKey}
+            searchFilter={searchQuery}
+            onNavigateToOrder={handleNavigateToOrder}
+          />
+        );
       case "dispatch":
-        return <DispatchView key={refreshKey} searchFilter={searchQuery} />;
+        return (
+          <DispatchView
+            key={refreshKey}
+            searchFilter={searchQuery}
+            onNavigateToOrder={handleNavigateToOrder}
+          />
+        );
       case "delivery":
-        return <DeliveryView key={refreshKey} searchFilter={searchQuery} />;
+        return (
+          <DeliveryView
+            key={refreshKey}
+            searchFilter={searchQuery}
+            onNavigateToOrder={handleNavigateToOrder}
+          />
+        );
       case "packed_inventory":
         return <InventoryView key={refreshKey} bucket="PACKED" searchFilter={searchQuery} />;
       case "unpacked_inventory":
@@ -177,7 +230,7 @@ export default function Home() {
       case "users":
         return <UsersView key={refreshKey} />;
       default:
-        return <DashboardView onNavigateToTab={(t) => setActiveTab(t)} searchFilter={searchQuery} />;
+        return <DashboardView onNavigateToTab={(t) => setActiveTab(t)} onNavigateToOrder={handleNavigateToOrder} searchFilter={searchQuery} />;
     }
   };
 
