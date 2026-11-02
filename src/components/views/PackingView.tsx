@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { PackageCheck, CheckCircle2 } from "lucide-react";
+import { PackageCheck, CheckCircle2, Printer } from "lucide-react";
 import { formatShortDate } from "@/lib/utils";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import { OrderPrintView } from "@/components/OrderPrintView";
 
 export const PackingView: React.FC<{ searchFilter?: string; onNavigateToOrder?: (orderId: string) => void }> = ({ searchFilter, onNavigateToOrder }) => {
   const [completingId, setCompletingId] = useState<string | null>(null);
@@ -58,7 +59,7 @@ export const PackingView: React.FC<{ searchFilter?: string; onNavigateToOrder?: 
 
   return (
     <div className="space-y-4">
-      <div className="bg-white p-4 rounded-lg border border-stone-200 shadow-sm flex flex-wrap justify-between items-center gap-3">
+      <div className="bg-white p-4 rounded-lg border border-stone-200 shadow-sm flex flex-wrap justify-between items-center gap-3 no-print">
         <div>
           <h3 className="text-sm font-semibold text-stone-900">Packaging Work Queue</h3>
           <p className="text-xs text-stone-500">
@@ -67,6 +68,13 @@ export const PackingView: React.FC<{ searchFilter?: string; onNavigateToOrder?: 
         </div>
 
         <div className="flex items-center space-x-2">
+          <button
+            onClick={() => window.print()}
+            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-stone-700 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-md transition"
+          >
+            <Printer className="w-3.5 h-3.5 text-stone-500" />
+            <span>Print</span>
+          </button>
           <button
             onClick={() => setShowCompleted(!showCompleted)}
             className={`px-3 py-1.5 text-xs rounded-md border font-medium transition ${
@@ -81,13 +89,13 @@ export const PackingView: React.FC<{ searchFilter?: string; onNavigateToOrder?: 
       </div>
 
       {feedback && (
-        <div className="p-3 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-lg text-xs flex items-center space-x-2">
+        <div className="p-3 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-lg text-xs flex items-center space-x-2 no-print">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{feedback}</span>
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-stone-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-lg border border-stone-200 shadow-sm overflow-hidden no-print">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
@@ -174,6 +182,24 @@ export const PackingView: React.FC<{ searchFilter?: string; onNavigateToOrder?: 
           </table>
         </div>
       </div>
+
+      {/* Simplified Print Output */}
+      <OrderPrintView
+        pageTitle="Packing Queue"
+        orders={filtered.map((t) => ({
+          orderId: t.orderId,
+          orderCode: t.orderCode,
+          displayOrderCode: t.displayOrderCode,
+          channel: t.channel || "CUSTOM",
+          items: t.items && t.items.length > 0 ? t.items : [
+            {
+              skuCode: t.skuCode,
+              skuName: t.skuName,
+              quantity: t.quantityRequired,
+            },
+          ],
+        }))}
+      />
     </div>
   );
 };

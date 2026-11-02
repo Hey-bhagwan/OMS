@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Send, CheckCircle2 } from "lucide-react";
+import { Send, CheckCircle2, Printer } from "lucide-react";
 import { formatShortDate } from "@/lib/utils";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import { OrderPrintView } from "@/components/OrderPrintView";
 
 export const DispatchView: React.FC<{ searchFilter?: string; onNavigateToOrder?: (orderId: string) => void }> = ({ searchFilter, onNavigateToOrder }) => {
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
@@ -69,23 +70,34 @@ export const DispatchView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
 
   return (
     <div className="space-y-4">
-      <div className="bg-white p-4 rounded-lg border border-stone-200 shadow-sm flex justify-between items-center">
+      {/* Header Banner */}
+      <div className="bg-white p-4 rounded-lg border border-stone-200 shadow-sm flex justify-between items-center no-print">
         <div>
-          <h3 className="text-sm font-semibold text-stone-900">Dispatch & Courier Handover</h3>
+          <h3 className="text-sm font-semibold text-stone-900">Dispatch &amp; Courier Handover</h3>
           <p className="text-xs text-stone-500">
             Packed items awaiting carrier pickup. Physical handover transitions parcels into active tracking
           </p>
         </div>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => window.print()}
+            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-stone-700 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-md transition"
+          >
+            <Printer className="w-3.5 h-3.5 text-stone-500" />
+            <span>Print</span>
+          </button>
+        </div>
       </div>
 
       {feedback && (
-        <div className="p-3 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-lg text-xs flex items-center space-x-2">
+        <div className="p-3 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-lg text-xs flex items-center space-x-2 no-print">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{feedback}</span>
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-stone-200 shadow-sm overflow-hidden">
+      {/* Dispatch Table */}
+      <div className="bg-white rounded-lg border border-stone-200 shadow-sm overflow-hidden no-print">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
@@ -114,11 +126,11 @@ export const DispatchView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
                 filtered.map((o) => (
                   <tr key={o.id} className="hover:bg-stone-50/70 transition">
                     <td className="py-2.5 px-4 font-mono font-medium text-stone-900">
-                    <span
-                      className="cursor-pointer hover:text-[#a27b5c] hover:underline"
-                      onClick={() => onNavigateToOrder?.(o.id)}
-                      title="Click to view in All Orders"
-                    >{o.orderCode}</span>
+                      <span
+                        className="cursor-pointer hover:text-[#a27b5c] hover:underline"
+                        onClick={() => onNavigateToOrder?.(o.id)}
+                        title="Click to view in All Orders"
+                      >{o.orderCode}</span>
                       {o.displayOrderCode && (
                         <span className="block text-[10px] text-stone-400 font-sans">{o.displayOrderCode}</span>
                       )}
@@ -153,9 +165,27 @@ export const DispatchView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
         </div>
       </div>
 
+      {/* Simplified Print Output */}
+      <OrderPrintView
+        pageTitle="Dispatch Handover Queue"
+        orders={filtered.map((o) => ({
+          orderId: o.id,
+          orderCode: o.orderCode,
+          displayOrderCode: o.displayOrderCode,
+          channel: o.channel,
+          items: o.items && o.items.length > 0 ? o.items : [
+            {
+              skuCode: o.skuCode,
+              skuName: o.skuName,
+              quantity: o.quantity,
+            },
+          ],
+        }))}
+      />
+
       {/* Record Dispatch Modal */}
       {selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs no-print">
           <form
             onSubmit={handleRecordDispatch}
             className="w-full max-w-md bg-white p-6 rounded-lg shadow-xl border border-stone-200 space-y-4"

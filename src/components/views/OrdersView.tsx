@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { formatShortDate, formatDate } from "@/lib/utils";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import { OrderPrintView } from "@/components/OrderPrintView";
 
 function getValidForwardStages(currentStage: string): { stage: string; label: string; color: string }[] {
   switch (currentStage) {
@@ -297,7 +298,7 @@ export const OrdersView: React.FC<{
       </div>
 
       {transitionMsg && (
-        <div className="p-3 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-lg text-xs flex items-center space-x-2">
+        <div className="p-3 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-lg text-xs flex items-center space-x-2 no-print">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{transitionMsg}</span>
         </div>
@@ -344,7 +345,7 @@ export const OrdersView: React.FC<{
       </div>
 
       {/* Orders Table */}
-      <div className="bg-white rounded-lg border border-stone-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-lg border border-stone-200 shadow-sm overflow-hidden no-print">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
@@ -478,9 +479,21 @@ export const OrdersView: React.FC<{
         </div>
       </div>
 
+      {/* Simplified Print Output */}
+      <OrderPrintView
+        pageTitle="All Orders"
+        orders={filteredOrders.map((o) => ({
+          orderId: o.id,
+          orderCode: o.uniwareOrderCode,
+          displayOrderCode: o.displayOrderCode,
+          channel: o.channel,
+          items: o.items || [],
+        }))}
+      />
+
       {/* Order Detail Drawer */}
       {selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/40 backdrop-blur-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/40 backdrop-blur-xs no-print">
           <div className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
             {/* Header */}
             <div className="px-6 py-4 border-b border-stone-200 flex items-center justify-between bg-stone-50">

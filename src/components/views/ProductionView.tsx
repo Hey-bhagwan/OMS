@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { formatShortDate, formatDate } from "@/lib/utils";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import { OrderPrintView } from "@/components/OrderPrintView";
 
 export const ProductionView: React.FC<{ searchFilter?: string; onNavigateToOrder?: (orderId: string) => void }> = ({ searchFilter, onNavigateToOrder }) => {
   const [statusFilter, setStatusFilter] = useState("");
@@ -248,7 +249,7 @@ export const ProductionView: React.FC<{ searchFilter?: string; onNavigateToOrder
       </div>
 
       {/* Production Orders Table */}
-      <div className="bg-white rounded-lg border border-stone-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-lg border border-stone-200 shadow-sm overflow-hidden no-print">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
@@ -367,9 +368,27 @@ export const ProductionView: React.FC<{ searchFilter?: string; onNavigateToOrder
         </div>
       </div>
 
+      {/* Simplified Print Output */}
+      <OrderPrintView
+        pageTitle="Production Work Orders"
+        orders={filtered.map((t) => ({
+          orderId: t.orderId,
+          orderCode: t.orderCode,
+          displayOrderCode: t.displayOrderCode,
+          channel: t.channel || "CUSTOM",
+          items: t.items && t.items.length > 0 ? t.items : [
+            {
+              skuCode: t.skuCode,
+              skuName: t.skuName,
+              quantity: t.quantityRequired,
+            },
+          ],
+        }))}
+      />
+
       {/* Production Action Modal */}
       {selectedTask && modalType && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 no-print">
           <div className="w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="px-6 py-4 border-b border-stone-200 flex items-center justify-between bg-stone-50">
               <div>

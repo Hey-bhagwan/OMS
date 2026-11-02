@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import {
   Search,
   RefreshCw,
-  Printer,
+
   CheckCircle2,
   ChevronDown,
   CalendarPlus,
@@ -195,9 +195,7 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
+
 
   return (
     <>
@@ -416,15 +414,7 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
-          {/* Print */}
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="p-2 rounded-lg border border-stone-200 hover:bg-stone-50 text-stone-600 transition"
-            title="Print this view"
-          >
-            <Printer className="w-4 h-4" />
-          </button>
+
 
           {/* User */}
           <div className="flex items-center space-x-2 pl-2 border-l border-stone-200">

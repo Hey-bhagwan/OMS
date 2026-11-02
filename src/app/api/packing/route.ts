@@ -18,7 +18,15 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: "desc" },
       include: {
         sku: true,
-        order: true,
+        order: {
+          include: {
+            lines: {
+              include: {
+                sku: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -41,6 +49,17 @@ export async function GET(req: NextRequest) {
         fulfillmentDeadline: t.order.fulfillmentDeadline,
         priorityLabel: t.order.priorityLabel,
         createdAt: t.createdAt,
+        items: t.order?.lines?.map((l) => ({
+          skuCode: l.sku.code,
+          skuName: l.sku.name,
+          quantity: l.quantity,
+        })) || [
+          {
+            skuCode: t.sku.code,
+            skuName: t.sku.name,
+            quantity: t.quantityRequired,
+          },
+        ],
       })),
     });
   } catch (err: unknown) {

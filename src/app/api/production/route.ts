@@ -34,6 +34,17 @@ export async function GET(req: NextRequest) {
                 displayOrderCode: true,
                 fulfillmentDeadline: true,
                 channel: true,
+                lines: {
+                  select: {
+                    quantity: true,
+                    sku: {
+                      select: {
+                        code: true,
+                        name: true,
+                      },
+                    },
+                  },
+                },
               },
             },
           },
@@ -70,6 +81,17 @@ export async function GET(req: NextRequest) {
         notes: t.notes,
         remarks: t.remarks,
         createdAt: t.createdAt,
+        items: t.orderLine?.order?.lines?.map((l) => ({
+          skuCode: l.sku.code,
+          skuName: l.sku.name,
+          quantity: l.quantity,
+        })) || [
+          {
+            skuCode: t.sku.code,
+            skuName: t.sku.name,
+            quantity: t.quantityRequired,
+          },
+        ],
       })),
     });
   } catch (err: unknown) {

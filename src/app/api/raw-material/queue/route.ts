@@ -57,6 +57,17 @@ export async function GET(req: NextRequest) {
               packagingType: true,
               priorityLabel: true,
               createdAt: true,
+              lines: {
+                select: {
+                  quantity: true,
+                  sku: {
+                    select: {
+                      code: true,
+                      name: true,
+                    },
+                  },
+                },
+              },
             },
           },
           orderLine: {
@@ -116,6 +127,17 @@ export async function GET(req: NextRequest) {
       lastUpdated: b.updatedAt,
       resolvedAt: b.resolvedAt,
       remarks: b.remarks,
+      items: b.order.lines?.map((l) => ({
+        skuCode: l.sku.code,
+        skuName: l.sku.name,
+        quantity: l.quantity,
+      })) || [
+        {
+          skuCode: b.sku.code,
+          skuName: b.sku.name,
+          quantity: b.orderLine?.quantity || b.blockedQuantity,
+        },
+      ],
     }));
 
     return NextResponse.json({

@@ -26,6 +26,11 @@ export async function GET(req: NextRequest) {
         skuCode: o.lines[0]?.sku.code || "N/A",
         skuName: o.lines[0]?.sku.name || "N/A",
         quantity: o.lines.reduce((acc, l) => acc + l.quantity, 0),
+        items: o.lines.map((l) => ({
+          skuCode: l.sku.code,
+          skuName: l.sku.name,
+          quantity: l.quantity,
+        })),
         packedCompletedQty: o.lines.reduce((acc, l) => acc + l.packedCompletedQty, 0),
         fulfillmentDeadline: o.fulfillmentDeadline,
         priorityLabel: o.priorityLabel,
