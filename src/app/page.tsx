@@ -17,6 +17,7 @@ import { ReportsView } from "@/components/views/ReportsView";
 import { SettingsView } from "@/components/views/SettingsView";
 import { UsersView } from "@/components/views/UsersView";
 import { ProductMasterView } from "@/components/views/ProductMasterView";
+import { WebhookLogsView } from "@/components/views/WebhookLogsView";
 import { invalidateCache } from "@/lib/useCachedFetch";
 
 export default function Home() {
@@ -225,6 +226,14 @@ export default function Home() {
         return <ProductMasterView key={refreshKey} searchFilter={searchQuery} />;
       case "reports":
         return <ReportsView key={refreshKey} />;
+      case "webhooks":
+        return (
+          <WebhookLogsView
+            key={refreshKey}
+            searchFilter={searchQuery}
+            onNavigateToOrder={handleNavigateToOrder}
+          />
+        );
       case "settings":
         return <SettingsView key={refreshKey} />;
       case "users":

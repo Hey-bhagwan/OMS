@@ -20,6 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   PackagePlus,
+  Webhook,
 } from "lucide-react";
 
 export type NavTab =
@@ -36,6 +37,7 @@ export type NavTab =
   | "stock_history"
   | "products"
   | "reports"
+  | "webhooks"
   | "settings"
   | "users";
 
@@ -70,6 +72,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: "stock_history", label: "Stock History", icon: History },
     { id: "products", label: "Product Master", icon: PackagePlus },
     { id: "reports", label: "Reports", icon: FileSpreadsheet },
+    { id: "webhooks", label: "Webhook Logs", icon: Webhook },
     { id: "settings", label: "Integration Settings", icon: Settings },
     { id: "users", label: "User Management", icon: Users },
   ];
