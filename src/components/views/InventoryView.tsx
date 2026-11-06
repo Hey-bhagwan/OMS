@@ -1,8 +1,11 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Download, RefreshCw, Archive, Layers, Plus, CheckCircle2 } from "lucide-react";
+import { Download, RefreshCw, Archive, Layers, Plus, CheckCircle2, FilterX } from "lucide-react";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import { ColumnFilter } from "@/components/ui/ColumnFilter";
+import { DataTablePagination } from "@/components/ui/DataTablePagination";
+import { useTableFiltersAndPagination } from "@/components/ui/useTableFiltersAndPagination";
 
 interface InventoryViewProps {
   bucket: "PACKED" | "UNPACKED";
@@ -33,6 +36,40 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ bucket, searchFilt
   } = useCachedFetch<any>(endpoint);
 
   const stocks = (stockData?.stocks || []) as any[];
+
+  // Table filtering and pagination hook
+  const {
+    currentPage,
+    pageSize,
+    totalPages,
+    totalRecords,
+    columnFilters,
+    filteredData: filteredStocks,
+    paginatedData: paginatedStocks,
+    hasActiveFilters,
+    setCurrentPage,
+    setPageSize,
+    setColumnFilter,
+    clearColumnFilter,
+    clearAllFilters,
+    getDistinctValues,
+  } = useTableFiltersAndPagination<any>(stocks, {
+    searchFilter,
+    searchFields: [
+      (s) => s.skuCode,
+      (s) => s.skuName,
+      (s) => s.category,
+      (s) => s.binLocation,
+      (s) => s.packingType,
+    ],
+    customFilterFn: (s, filters) => {
+      if (filters.category && filters.category.length > 0) {
+        const cat = s.category || "General";
+        if (!filters.category.includes(cat)) return false;
+      }
+      return true;
+    },
+  });
 
   useEffect(() => {
     // Load SKUs for add stock dropdown
@@ -179,6 +216,16 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ bucket, searchFilt
         </div>
 
         <div className="flex items-center space-x-2">
+          {hasActiveFilters && (
+            <button
+              onClick={clearAllFilters}
+              className="flex items-center space-x-1 px-2.5 py-1 text-xs text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition font-medium"
+            >
+              <FilterX className="w-3.5 h-3.5" />
+              <span>Clear All Filters</span>
+            </button>
+          )}
+
           {/* User Add Stock Button */}
           <button
             onClick={() => setShowAddModal(true)}
@@ -230,14 +277,112 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ bucket, searchFilt
           <table className="w-full text-left text-xs">
             <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
               <tr>
-                <th className="py-2.5 px-4">SKU Code</th>
-                <th className="py-2.5 px-4">Product Name</th>
-                <th className="py-2.5 px-4">Category</th>
-                {isPacked && <th className="py-2.5 px-4">Standard Packaging</th>}
-                <th className="py-2.5 px-4">On Hand Qty</th>
-                <th className="py-2.5 px-4">Reserved Qty</th>
-                <th className="py-2.5 px-4">Available Qty</th>
-                <th className="py-2.5 px-4">Warehouse Bin</th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>SKU Code</span>
+                    <ColumnFilter
+                      columnId="skuCode"
+                      columnTitle="SKU Code"
+                      options={getDistinctValues("skuCode", (s) => s.skuCode)}
+                      selectedValues={columnFilters["skuCode"] || []}
+                      onApply={(vals) => setColumnFilter("skuCode", vals)}
+                      onClear={() => clearColumnFilter("skuCode")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Product Name</span>
+                    <ColumnFilter
+                      columnId="skuName"
+                      columnTitle="Product Name"
+                      options={getDistinctValues("skuName", (s) => s.skuName)}
+                      selectedValues={columnFilters["skuName"] || []}
+                      onApply={(vals) => setColumnFilter("skuName", vals)}
+                      onClear={() => clearColumnFilter("skuName")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Category</span>
+                    <ColumnFilter
+                      columnId="category"
+                      columnTitle="Category"
+                      options={getDistinctValues("category", (s) => s.category || "General")}
+                      selectedValues={columnFilters["category"] || []}
+                      onApply={(vals) => setColumnFilter("category", vals)}
+                      onClear={() => clearColumnFilter("category")}
+                    />
+                  </div>
+                </th>
+                {isPacked && (
+                  <th className="py-2.5 px-4 whitespace-nowrap">
+                    <div className="flex items-center justify-between">
+                      <span>Standard Packaging</span>
+                      <ColumnFilter
+                        columnId="packingType"
+                        columnTitle="Packaging"
+                        options={getDistinctValues("packingType", (s) => s.packingType)}
+                        selectedValues={columnFilters["packingType"] || []}
+                        onApply={(vals) => setColumnFilter("packingType", vals)}
+                        onClear={() => clearColumnFilter("packingType")}
+                      />
+                    </div>
+                  </th>
+                )}
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>On Hand Qty</span>
+                    <ColumnFilter
+                      columnId="quantityOnHand"
+                      columnTitle="On Hand"
+                      options={getDistinctValues("quantityOnHand", (s) => String(s.quantityOnHand))}
+                      selectedValues={columnFilters["quantityOnHand"] || []}
+                      onApply={(vals) => setColumnFilter("quantityOnHand", vals)}
+                      onClear={() => clearColumnFilter("quantityOnHand")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Reserved Qty</span>
+                    <ColumnFilter
+                      columnId="quantityReserved"
+                      columnTitle="Reserved"
+                      options={getDistinctValues("quantityReserved", (s) => String(s.quantityReserved))}
+                      selectedValues={columnFilters["quantityReserved"] || []}
+                      onApply={(vals) => setColumnFilter("quantityReserved", vals)}
+                      onClear={() => clearColumnFilter("quantityReserved")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Available Qty</span>
+                    <ColumnFilter
+                      columnId="quantityAvailable"
+                      columnTitle="Available"
+                      options={getDistinctValues("quantityAvailable", (s) => String(s.quantityAvailable))}
+                      selectedValues={columnFilters["quantityAvailable"] || []}
+                      onApply={(vals) => setColumnFilter("quantityAvailable", vals)}
+                      onClear={() => clearColumnFilter("quantityAvailable")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Warehouse Bin</span>
+                    <ColumnFilter
+                      columnId="binLocation"
+                      columnTitle="Warehouse Bin"
+                      options={getDistinctValues("binLocation", (s) => s.binLocation)}
+                      selectedValues={columnFilters["binLocation"] || []}
+                      onApply={(vals) => setColumnFilter("binLocation", vals)}
+                      onClear={() => clearColumnFilter("binLocation")}
+                    />
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
@@ -245,12 +390,12 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ bucket, searchFilt
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-stone-400">Loading stock records...</td>
                 </tr>
-              ) : filtered.length === 0 ? (
+              ) : paginatedStocks.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-stone-400">No inventory found in this bucket.</td>
                 </tr>
               ) : (
-                filtered.map((s) => (
+                paginatedStocks.map((s) => (
                   <tr key={s.id} className="hover:bg-stone-50/70 transition">
                     <td className="py-2.5 px-4 font-mono font-medium text-stone-900">{s.skuCode}</td>
                     <td className="py-2.5 px-4 font-semibold text-stone-800">{s.skuName}</td>
@@ -266,6 +411,14 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ bucket, searchFilt
             </tbody>
           </table>
         </div>
+        <DataTablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalRecords={totalRecords}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* Quick Add Stock Modal */}

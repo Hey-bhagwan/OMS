@@ -16,10 +16,15 @@ import {
   X,
   Clock,
   ShieldAlert,
+  FilterX,
 } from "lucide-react";
 import { formatShortDate, formatDate } from "@/lib/utils";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import { OrderPrintView } from "@/components/OrderPrintView";
+import { ColumnFilter } from "@/components/ui/ColumnFilter";
+import { DataTablePagination } from "@/components/ui/DataTablePagination";
+import { useTableFiltersAndPagination } from "@/components/ui/useTableFiltersAndPagination";
+import { DateSortHeader } from "@/components/ui/DateSortHeader";
 
 export const RawMaterialView: React.FC<{
   searchFilter?: string;
@@ -42,7 +47,7 @@ export const RawMaterialView: React.FC<{
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const q = searchFilter || localSearch;
-  let queueUrl = `/api/raw-material/queue?page=${page}&limit=25&status=${statusFilter}`;
+  let queueUrl = `/api/raw-material/queue?limit=1000&status=${statusFilter}`;
   if (channelFilter) queueUrl += `&channel=${encodeURIComponent(channelFilter)}`;
   if (q) queueUrl += `&search=${encodeURIComponent(q)}`;
 
@@ -54,8 +59,65 @@ export const RawMaterialView: React.FC<{
   } = useCachedFetch<any>(queueUrl);
 
   const blocks = (queueData?.blocks || []) as any[];
-  const totalPages = queueData?.pagination?.totalPages || 1;
-  const totalRecords = queueData?.pagination?.total || 0;
+
+  // Table filtering and pagination hook
+  const {
+    currentPage,
+    pageSize,
+    totalPages,
+    totalRecords,
+    columnFilters,
+    filteredData: filteredBlocks,
+    paginatedData: paginatedBlocks,
+    hasActiveFilters,
+    sortColumn,
+    sortDirection,
+    toggleDateSort,
+    setCurrentPage,
+    setPageSize,
+    setColumnFilter,
+    clearColumnFilter,
+    clearAllFilters,
+    getDistinctValues,
+  } = useTableFiltersAndPagination<any>(blocks, {
+    searchFilter: q,
+    dateSortExtractors: {
+      deadline: (b) => b.fulfillmentDeadline,
+      dateBlocked: (b) => b.createdAt,
+    },
+    searchFields: [
+      (b) => b.orderCode,
+      (b) => b.displayOrderCode,
+      (b) => b.skuCode,
+      (b) => b.productName,
+      (b) => b.reason,
+      (b) => b.assignedUserName,
+    ],
+    customFilterFn: (b, filters) => {
+      if (filters.status && filters.status.length > 0) {
+        const statusLabel =
+          b.status === "BLOCKED"
+            ? "Blocked"
+            : b.status === "PENDING_ASSESSMENT"
+            ? "Pending Assessment"
+            : "Resolved";
+        if (!filters.status.includes(statusLabel) && !filters.status.includes(b.status)) return false;
+      }
+      if (filters.deadline && filters.deadline.length > 0) {
+        const dl = formatShortDate(b.fulfillmentDeadline);
+        if (!filters.deadline.includes(dl)) return false;
+      }
+      if (filters.dateBlocked && filters.dateBlocked.length > 0) {
+        const dt = formatShortDate(b.createdAt);
+        if (!filters.dateBlocked.includes(dt)) return false;
+      }
+      if (filters.assignedStaff && filters.assignedStaff.length > 0) {
+        const staff = b.assignedUserName || "Unassigned";
+        if (!filters.assignedStaff.includes(staff)) return false;
+      }
+      return true;
+    },
+  });
 
   const fetchUsers = () => {
     fetch("/api/users")
@@ -237,6 +299,16 @@ export const RawMaterialView: React.FC<{
 
         {/* Search & Channel Filter */}
         <div className="flex items-center space-x-2">
+          {hasActiveFilters && (
+            <button
+              onClick={clearAllFilters}
+              className="flex items-center space-x-1 px-2.5 py-1 text-xs text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition font-medium"
+            >
+              <FilterX className="w-3.5 h-3.5" />
+              <span>Clear All Filters</span>
+            </button>
+          )}
+
           <div className="relative w-48">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-stone-400" />
             <input
@@ -251,7 +323,7 @@ export const RawMaterialView: React.FC<{
 
           <select
             value={channelFilter}
-            onChange={(e) => { setChannelFilter(e.target.value); setPage(1); }}
+            onChange={(e) => { setChannelFilter(e.target.value); setCurrentPage(1); }}
             className="px-2.5 py-1.5 bg-stone-50 border border-stone-200 rounded-md text-xs text-stone-700 focus:outline-none"
           >
             <option value="">All Channels</option>
@@ -268,15 +340,139 @@ export const RawMaterialView: React.FC<{
           <table className="w-full text-left text-xs">
             <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
               <tr>
-                <th className="py-2.5 px-4">Order Code</th>
-                <th className="py-2.5 px-4">Channel</th>
-                <th className="py-2.5 px-4">Product SKU & Name</th>
-                <th className="py-2.5 px-4 text-center">Status</th>
-                <th className="py-2.5 px-4 text-center">Blocked Qty</th>
-                <th className="py-2.5 px-4">Deadline</th>
-                <th className="py-2.5 px-4">Reason / Remark</th>
-                <th className="py-2.5 px-4">Assigned Staff</th>
-                <th className="py-2.5 px-4">Date Blocked</th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Order Code</span>
+                    <ColumnFilter
+                      columnId="orderCode"
+                      columnTitle="Order Code"
+                      options={getDistinctValues("orderCode", (b) => b.orderCode)}
+                      selectedValues={columnFilters["orderCode"] || []}
+                      onApply={(vals) => setColumnFilter("orderCode", vals)}
+                      onClear={() => clearColumnFilter("orderCode")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Channel</span>
+                    <ColumnFilter
+                      columnId="channel"
+                      columnTitle="Channel"
+                      options={getDistinctValues("channel", (b) => b.channel)}
+                      selectedValues={columnFilters["channel"] || []}
+                      onApply={(vals) => setColumnFilter("channel", vals)}
+                      onClear={() => clearColumnFilter("channel")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Product SKU & Name</span>
+                    <ColumnFilter
+                      columnId="skuCode"
+                      columnTitle="SKU"
+                      options={getDistinctValues("skuCode", (b) => b.skuCode)}
+                      selectedValues={columnFilters["skuCode"] || []}
+                      onApply={(vals) => setColumnFilter("skuCode", vals)}
+                      onClear={() => clearColumnFilter("skuCode")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 text-center whitespace-nowrap">
+                  <div className="flex items-center justify-center space-x-1">
+                    <span>Status</span>
+                    <ColumnFilter
+                      columnId="status"
+                      columnTitle="Status"
+                      options={getDistinctValues("status", (b) =>
+                        b.status === "BLOCKED"
+                          ? "Blocked"
+                          : b.status === "PENDING_ASSESSMENT"
+                          ? "Pending Assessment"
+                          : "Resolved"
+                      )}
+                      selectedValues={columnFilters["status"] || []}
+                      onApply={(vals) => setColumnFilter("status", vals)}
+                      onClear={() => clearColumnFilter("status")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 text-center whitespace-nowrap">
+                  <div className="flex items-center justify-center space-x-1">
+                    <span>Blocked Qty</span>
+                    <ColumnFilter
+                      columnId="netBlockedQuantity"
+                      columnTitle="Blocked Qty"
+                      options={getDistinctValues("netBlockedQuantity", (b) => String(b.netBlockedQuantity))}
+                      selectedValues={columnFilters["netBlockedQuantity"] || []}
+                      onApply={(vals) => setColumnFilter("netBlockedQuantity", vals)}
+                      onClear={() => clearColumnFilter("netBlockedQuantity")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <DateSortHeader
+                    title="Deadline"
+                    columnId="deadline"
+                    currentSortColumn={sortColumn}
+                    currentSortDirection={sortDirection}
+                    onSortChange={toggleDateSort}
+                  >
+                    <ColumnFilter
+                      columnId="deadline"
+                      columnTitle="Deadline"
+                      options={getDistinctValues("deadline", (b) => formatShortDate(b.fulfillmentDeadline))}
+                      selectedValues={columnFilters["deadline"] || []}
+                      onApply={(vals) => setColumnFilter("deadline", vals)}
+                      onClear={() => clearColumnFilter("deadline")}
+                    />
+                  </DateSortHeader>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Reason / Remark</span>
+                    <ColumnFilter
+                      columnId="reason"
+                      columnTitle="Reason"
+                      options={getDistinctValues("reason", (b) => b.reason || "None")}
+                      selectedValues={columnFilters["reason"] || []}
+                      onApply={(vals) => setColumnFilter("reason", vals)}
+                      onClear={() => clearColumnFilter("reason")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Assigned Staff</span>
+                    <ColumnFilter
+                      columnId="assignedStaff"
+                      columnTitle="Assigned Staff"
+                      options={getDistinctValues("assignedStaff", (b) => b.assignedUserName || "Unassigned")}
+                      selectedValues={columnFilters["assignedStaff"] || []}
+                      onApply={(vals) => setColumnFilter("assignedStaff", vals)}
+                      onClear={() => clearColumnFilter("assignedStaff")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <DateSortHeader
+                    title="Date Blocked"
+                    columnId="dateBlocked"
+                    currentSortColumn={sortColumn}
+                    currentSortDirection={sortDirection}
+                    onSortChange={toggleDateSort}
+                  >
+                    <ColumnFilter
+                      columnId="dateBlocked"
+                      columnTitle="Date Blocked"
+                      options={getDistinctValues("dateBlocked", (b) => formatShortDate(b.createdAt))}
+                      selectedValues={columnFilters["dateBlocked"] || []}
+                      onApply={(vals) => setColumnFilter("dateBlocked", vals)}
+                      onClear={() => clearColumnFilter("dateBlocked")}
+                    />
+                  </DateSortHeader>
+                </th>
                 <th className="py-2.5 px-4 text-right no-print">Actions</th>
               </tr>
             </thead>
@@ -285,7 +481,7 @@ export const RawMaterialView: React.FC<{
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-stone-400">Loading blocked order queue...</td>
                 </tr>
-              ) : blocks.length === 0 ? (
+              ) : paginatedBlocks.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-stone-400">
                     {statusFilter === "BLOCKED"
@@ -296,7 +492,7 @@ export const RawMaterialView: React.FC<{
                   </td>
                 </tr>
               ) : (
-                blocks.map((b) => (
+                paginatedBlocks.map((b) => (
                   <tr key={b.id} className="hover:bg-stone-50/70 transition align-top">
                     <td className="py-2.5 px-4">
                       <span
@@ -416,28 +612,15 @@ export const RawMaterialView: React.FC<{
           </table>
         </div>
 
-        {/* Pagination Footer */}
-        {totalPages > 1 && (
-          <div className="p-3 bg-stone-50 border-t border-stone-200 flex items-center justify-between text-xs text-stone-500 no-print">
-            <span>Showing page {page} of {totalPages} ({totalRecords} records)</span>
-            <div className="flex space-x-1">
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-                className="px-2.5 py-1 border border-stone-200 rounded bg-white hover:bg-stone-50 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-                className="px-2.5 py-1 border border-stone-200 rounded bg-white hover:bg-stone-50 disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Reusable Pagination */}
+        <DataTablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalRecords={totalRecords}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* Simplified Print Output */}

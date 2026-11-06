@@ -13,8 +13,10 @@ export async function GET(req: NextRequest) {
     const channel = searchParams.get("channel");
     const search = searchParams.get("search")?.trim();
     const isOverdue = searchParams.get("isOverdue") === "true";
+    const sortBy = searchParams.get("sortBy");
+    const sortOrder = searchParams.get("sortOrder") === "asc" ? "asc" : "desc";
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "15", 10)));
+    const limit = Math.min(1000, Math.max(1, parseInt(searchParams.get("limit") || "1000", 10)));
     const skip = (page - 1) * limit;
 
     const where: any = {};
@@ -42,13 +44,22 @@ export async function GET(req: NextRequest) {
       ];
     }
 
+    let orderBy: any = [{ priorityScore: "desc" }, { createdAt: "desc" }];
+    if (sortBy === "orderDate") {
+      orderBy = [{ displayOrderDateTime: sortOrder }, { createdAt: sortOrder }];
+    } else if (sortBy === "fulfillmentDeadline") {
+      orderBy = [{ fulfillmentDeadline: sortOrder }];
+    } else if (sortBy === "createdAt") {
+      orderBy = [{ createdAt: sortOrder }];
+    }
+
     const [total, orders] = await Promise.all([
       prisma.order.count({ where }),
       prisma.order.findMany({
         where,
         skip,
         take: limit,
-        orderBy: [{ priorityScore: "desc" }, { createdAt: "desc" }],
+        orderBy,
         select: {
           id: true,
           uniwareOrderCode: true,

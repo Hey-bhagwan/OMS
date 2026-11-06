@@ -19,8 +19,13 @@ import {
   Truck,
   Layers,
   ArrowUpRight,
+  FilterX,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { ColumnFilter } from "@/components/ui/ColumnFilter";
+import { DataTablePagination } from "@/components/ui/DataTablePagination";
+import { useTableFiltersAndPagination } from "@/components/ui/useTableFiltersAndPagination";
+import { DateSortHeader } from "@/components/ui/DateSortHeader";
 
 interface WebhookLog {
   id: string;
@@ -69,13 +74,8 @@ export const WebhookLogsView: React.FC<WebhookLogsViewProps> = ({
   onNavigateToOrder,
   searchFilter = "",
 }) => {
-  const [logs, setLogs] = useState<WebhookLog[]>([]);
+  const [allLogs, setAllLogs] = useState<WebhookLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [providerFilter, setProviderFilter] = useState<string>("");
-  const [statusFilter, setStatusFilter] = useState<string>("");
   const [localSearch, setLocalSearch] = useState<string>("");
   const [selectedLog, setSelectedLog] = useState<WebhookLog | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -83,22 +83,65 @@ export const WebhookLogsView: React.FC<WebhookLogsViewProps> = ({
 
   const effectiveSearch = searchFilter || localSearch;
 
+  const {
+    currentPage,
+    pageSize,
+    totalPages,
+    totalRecords,
+    columnFilters,
+    filteredData,
+    paginatedData,
+    hasActiveFilters,
+    sortColumn,
+    sortDirection,
+    toggleDateSort,
+    setCurrentPage,
+    setPageSize,
+    setColumnFilter,
+    clearColumnFilter,
+    clearAllFilters,
+    getDistinctValues,
+  } = useTableFiltersAndPagination<WebhookLog>(allLogs, {
+    searchFilter: effectiveSearch,
+    initialSortColumn: "receivedAt",
+    initialSortDirection: "desc",
+    dateSortExtractors: {
+      receivedAt: (l) => l.receivedAt,
+    },
+    searchFields: [
+      (l) => l.awb,
+      (l) => l.courierName,
+      (l) => l.providerStatus,
+      (l) => l.normalizedStatus,
+      (l) => l.activity,
+      (l) => l.location,
+      (l) => l.processedDetails?.matchedOrder?.displayOrderCode,
+      (l) => l.processedDetails?.matchedOrder?.uniwareOrderCode,
+    ],
+    customFilterFn: (l, filters) => {
+      if (filters.receivedAt && filters.receivedAt.length > 0) {
+        const d = formatDate(l.receivedAt);
+        if (!filters.receivedAt.includes(d)) return false;
+      }
+      if (filters.matchedOrder && filters.matchedOrder.length > 0) {
+        const code = l.processedDetails?.matchedOrder?.displayOrderCode || l.processedDetails?.matchedOrder?.uniwareOrderCode || "Not matched";
+        if (!filters.matchedOrder.includes(code)) return false;
+      }
+      return true;
+    },
+  });
+
   const fetchLogs = async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.set("page", String(page));
-      params.set("limit", "20");
-      if (providerFilter) params.set("provider", providerFilter);
-      if (statusFilter) params.set("status", statusFilter);
-      if (effectiveSearch) params.set("search", effectiveSearch);
+      params.set("page", "1");
+      params.set("limit", "1000");
 
       const res = await fetch(`/api/webhooks/logs?${params.toString()}`);
       const data = await res.json();
       if (data.success) {
-        setLogs(data.logs || []);
-        setTotal(data.total || 0);
-        setTotalPages(data.totalPages || 1);
+        setAllLogs(data.logs || []);
         // keep selected log updated if already open
         if (selectedLog) {
           const updated = (data.logs || []).find((l: WebhookLog) => l.id === selectedLog.id);
@@ -114,7 +157,7 @@ export const WebhookLogsView: React.FC<WebhookLogsViewProps> = ({
 
   useEffect(() => {
     fetchLogs();
-  }, [page, providerFilter, statusFilter, effectiveSearch]);
+  }, []);
 
   const handleCopy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -165,7 +208,7 @@ export const WebhookLogsView: React.FC<WebhookLogsViewProps> = ({
             </div>
             <h2 className="text-base font-bold text-stone-900">Webhook Audit & Ingress Logs</h2>
             <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-medium">
-              {total.toLocaleString()} receipts recorded
+              {totalRecords.toLocaleString()} receipts recorded
             </span>
           </div>
           <p className="text-xs text-stone-500 mt-1">
@@ -174,34 +217,15 @@ export const WebhookLogsView: React.FC<WebhookLogsViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Provider Filter */}
-          <select
-            value={providerFilter}
-            onChange={(e) => {
-              setProviderFilter(e.target.value);
-              setPage(1);
-            }}
-            className="text-xs bg-stone-50 border border-stone-200 rounded-md px-2.5 py-1.5 text-stone-700 focus:outline-none focus:ring-1 focus:ring-[#a27b5c]"
-          >
-            <option value="">All Providers</option>
-            <option value="SHIPROCKET">Shiprocket Standard</option>
-            <option value="SHIPROCKET_CARGO">Shiprocket Cargo</option>
-          </select>
-
-          {/* Status Filter */}
-          <select
-            value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value);
-              setPage(1);
-            }}
-            className="text-xs bg-stone-50 border border-stone-200 rounded-md px-2.5 py-1.5 text-stone-700 focus:outline-none focus:ring-1 focus:ring-[#a27b5c]"
-          >
-            <option value="">All Processing Status</option>
-            <option value="PROCESSED">Processed</option>
-            <option value="FAILED">Failed</option>
-            <option value="UNMATCHED">Unmatched</option>
-          </select>
+          {hasActiveFilters && (
+            <button
+              onClick={clearAllFilters}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md transition"
+            >
+              <FilterX className="w-3.5 h-3.5" />
+              <span>Clear Filters</span>
+            </button>
+          )}
 
           {/* Local search input if global search not provided */}
           {!searchFilter && (
@@ -211,10 +235,7 @@ export const WebhookLogsView: React.FC<WebhookLogsViewProps> = ({
                 type="text"
                 placeholder="Search AWB, order, status..."
                 value={localSearch}
-                onChange={(e) => {
-                  setLocalSearch(e.target.value);
-                  setPage(1);
-                }}
+                onChange={(e) => setLocalSearch(e.target.value)}
                 className="text-xs bg-stone-50 border border-stone-200 rounded-md pl-8 pr-3 py-1.5 text-stone-700 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-[#a27b5c] w-48"
               />
             </div>
@@ -237,33 +258,122 @@ export const WebhookLogsView: React.FC<WebhookLogsViewProps> = ({
           <table className="w-full text-left text-xs">
             <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
               <tr>
-                <th className="py-2.5 px-3">Received Time</th>
-                <th className="py-2.5 px-3">Provider</th>
-                <th className="py-2.5 px-3">AWB / Waybill</th>
-                <th className="py-2.5 px-3">Provider Status</th>
-                <th className="py-2.5 px-3">Normalized Stage</th>
-                <th className="py-2.5 px-3">Matched Order</th>
+                <th className="py-2.5 px-3">
+                  <DateSortHeader
+                    title="Received Time"
+                    columnId="receivedAt"
+                    currentSortColumn={sortColumn}
+                    currentSortDirection={sortDirection}
+                    onSortChange={toggleDateSort}
+                  >
+                    <ColumnFilter
+                      columnId="receivedAt"
+                      columnTitle="Received Time"
+                      options={getDistinctValues("receivedAt", (l) => formatDate(l.receivedAt))}
+                      selectedValues={columnFilters["receivedAt"] || []}
+                      onApply={(vals) => setColumnFilter("receivedAt", vals)}
+                      onClear={() => clearColumnFilter("receivedAt")}
+                    />
+                  </DateSortHeader>
+                </th>
+                <th className="py-2.5 px-3">
+                  <div className="flex items-center justify-between">
+                    <span>Provider</span>
+                    <ColumnFilter
+                      columnId="provider"
+                      columnTitle="Provider"
+                      options={getDistinctValues("provider", (l) => l.provider)}
+                      selectedValues={columnFilters["provider"] || []}
+                      onApply={(vals) => setColumnFilter("provider", vals)}
+                      onClear={() => clearColumnFilter("provider")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-3">
+                  <div className="flex items-center justify-between">
+                    <span>AWB / Waybill</span>
+                    <ColumnFilter
+                      columnId="awb"
+                      columnTitle="AWB / Waybill"
+                      options={getDistinctValues("awb", (l) => l.awb)}
+                      selectedValues={columnFilters["awb"] || []}
+                      onApply={(vals) => setColumnFilter("awb", vals)}
+                      onClear={() => clearColumnFilter("awb")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-3">
+                  <div className="flex items-center justify-between">
+                    <span>Provider Status</span>
+                    <ColumnFilter
+                      columnId="providerStatus"
+                      columnTitle="Provider Status"
+                      options={getDistinctValues("providerStatus", (l) => l.providerStatus)}
+                      selectedValues={columnFilters["providerStatus"] || []}
+                      onApply={(vals) => setColumnFilter("providerStatus", vals)}
+                      onClear={() => clearColumnFilter("providerStatus")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-3">
+                  <div className="flex items-center justify-between">
+                    <span>Normalized Stage</span>
+                    <ColumnFilter
+                      columnId="normalizedStatus"
+                      columnTitle="Normalized Stage"
+                      options={getDistinctValues("normalizedStatus", (l) => l.normalizedStatus)}
+                      selectedValues={columnFilters["normalizedStatus"] || []}
+                      onApply={(vals) => setColumnFilter("normalizedStatus", vals)}
+                      onClear={() => clearColumnFilter("normalizedStatus")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-3">
+                  <div className="flex items-center justify-between">
+                    <span>Matched Order</span>
+                    <ColumnFilter
+                      columnId="matchedOrder"
+                      columnTitle="Matched Order"
+                      options={getDistinctValues("matchedOrder", (l) => l.processedDetails.matchedOrder?.displayOrderCode || l.processedDetails.matchedOrder?.uniwareOrderCode || null)}
+                      selectedValues={columnFilters["matchedOrder"] || []}
+                      onApply={(vals) => setColumnFilter("matchedOrder", vals)}
+                      onClear={() => clearColumnFilter("matchedOrder")}
+                    />
+                  </div>
+                </th>
                 <th className="py-2.5 px-3">Location / Activity</th>
-                <th className="py-2.5 px-3">Result</th>
+                <th className="py-2.5 px-3">
+                  <div className="flex items-center justify-between">
+                    <span>Result</span>
+                    <ColumnFilter
+                      columnId="status"
+                      columnTitle="Result"
+                      options={getDistinctValues("status", (l) => l.status)}
+                      selectedValues={columnFilters["status"] || []}
+                      onApply={(vals) => setColumnFilter("status", vals)}
+                      onClear={() => clearColumnFilter("status")}
+                    />
+                  </div>
+                </th>
                 <th className="py-2.5 px-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
-              {loading && logs.length === 0 ? (
+              {loading && allLogs.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-stone-400">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#a27b5c]" />
                     Loading webhook receipt logs...
                   </td>
                 </tr>
-              ) : logs.length === 0 ? (
+              ) : paginatedData.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-stone-400">
                     No webhook logs found matching your filters.
                   </td>
                 </tr>
               ) : (
-                logs.map((log) => {
+                paginatedData.map((log) => {
                   const isSelected = selectedLog?.id === log.id;
                   const matchedOrder = log.processedDetails.matchedOrder;
 
@@ -344,31 +454,14 @@ export const WebhookLogsView: React.FC<WebhookLogsViewProps> = ({
         </div>
 
         {/* Pagination Bar */}
-        <div className="px-4 py-2.5 border-t border-stone-200 bg-stone-50 flex items-center justify-between text-xs text-stone-500">
-          <div>
-            Showing <span className="font-medium text-stone-700">{logs.length}</span> of{" "}
-            <span className="font-medium text-stone-700">{total}</span> webhook receipts
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
-              className="p-1 rounded border border-stone-200 bg-white hover:bg-stone-50 disabled:opacity-40"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-            <span className="text-stone-700 font-medium">
-              Page {page} of {totalPages}
-            </span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-              className="p-1 rounded border border-stone-200 bg-white hover:bg-stone-50 disabled:opacity-40"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
+        <DataTablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalRecords={totalRecords}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* Details Slide-out / Modal Drawer when a log is selected */}

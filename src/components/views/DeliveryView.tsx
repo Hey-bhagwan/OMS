@@ -1,9 +1,13 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Truck, AlertTriangle, CheckCircle2, Clock, MapPin } from "lucide-react";
+import { Truck, AlertTriangle, CheckCircle2, Clock, MapPin, FilterX } from "lucide-react";
 import { formatDate, formatShortDate } from "@/lib/utils";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import { ColumnFilter } from "@/components/ui/ColumnFilter";
+import { DataTablePagination } from "@/components/ui/DataTablePagination";
+import { useTableFiltersAndPagination } from "@/components/ui/useTableFiltersAndPagination";
+import { DateSortHeader } from "@/components/ui/DateSortHeader";
 
 export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?: (orderId: string) => void }> = ({ searchFilter, onNavigateToOrder }) => {
   const [filter, setFilter] = useState("");
@@ -21,15 +25,49 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
 
   const shipments = (deliveryData?.shipments || []) as any[];
 
-  const filtered = shipments.filter((s) => {
-    if (!searchFilter) return true;
-    const q = searchFilter.toLowerCase();
-    return (
-      s.awb?.toLowerCase().includes(q) ||
-      s.courier?.toLowerCase().includes(q) ||
-      s.orderCode?.toLowerCase().includes(q) ||
-      s.destinationCity?.toLowerCase().includes(q)
-    );
+  // Table filtering and pagination hook
+  const {
+    currentPage,
+    pageSize,
+    totalPages,
+    totalRecords,
+    columnFilters,
+    filteredData: filteredShipments,
+    paginatedData: paginatedShipments,
+    hasActiveFilters,
+    sortColumn,
+    sortDirection,
+    toggleDateSort,
+    setCurrentPage,
+    setPageSize,
+    setColumnFilter,
+    clearColumnFilter,
+    clearAllFilters,
+    getDistinctValues,
+  } = useTableFiltersAndPagination<any>(shipments, {
+    searchFilter,
+    dateSortExtractors: {
+      etd: (s) => s.etd,
+    },
+    searchFields: [
+      (s) => s.awb,
+      (s) => s.courier,
+      (s) => s.orderCode,
+      (s) => s.destinationCity,
+      (s) => s.lastScanLocation,
+      (s) => s.lastActivity,
+    ],
+    customFilterFn: (s, filters) => {
+      if (filters.status && filters.status.length > 0) {
+        const statusLabel = s.status?.replace(/_/g, " ");
+        if (!filters.status.includes(statusLabel) && !filters.status.includes(s.status)) return false;
+      }
+      if (filters.etd && filters.etd.length > 0) {
+        const etdStr = formatShortDate(s.etd);
+        if (!filters.etd.includes(etdStr)) return false;
+      }
+      return true;
+    },
   });
 
   return (
@@ -42,6 +80,15 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
         </div>
 
         <div className="flex items-center space-x-2">
+          {hasActiveFilters && (
+            <button
+              onClick={clearAllFilters}
+              className="flex items-center space-x-1 px-2.5 py-1 text-xs text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition font-medium"
+            >
+              <FilterX className="w-3.5 h-3.5" />
+              <span>Clear All Filters</span>
+            </button>
+          )}
           <button
             onClick={() => setFilter("")}
             className={`px-2.5 py-1 text-xs rounded-md font-medium transition ${
@@ -82,13 +129,90 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
           <table className="w-full text-left text-xs">
             <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
               <tr>
-                <th className="py-2.5 px-4">AWB / Waybill</th>
-                <th className="py-2.5 px-4">Courier</th>
-                <th className="py-2.5 px-4">Order Code</th>
-                <th className="py-2.5 px-4">Shipment Status</th>
-                <th className="py-2.5 px-4">Current Hub / Location</th>
-                <th className="py-2.5 px-4">Latest Scan Activity</th>
-                <th className="py-2.5 px-4">Estimated Delivery</th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>AWB / Waybill</span>
+                    <ColumnFilter
+                      columnId="awb"
+                      columnTitle="AWB"
+                      options={getDistinctValues("awb", (s) => s.awb)}
+                      selectedValues={columnFilters["awb"] || []}
+                      onApply={(vals) => setColumnFilter("awb", vals)}
+                      onClear={() => clearColumnFilter("awb")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Courier</span>
+                    <ColumnFilter
+                      columnId="courier"
+                      columnTitle="Courier"
+                      options={getDistinctValues("courier", (s) => s.courier)}
+                      selectedValues={columnFilters["courier"] || []}
+                      onApply={(vals) => setColumnFilter("courier", vals)}
+                      onClear={() => clearColumnFilter("courier")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Order Code</span>
+                    <ColumnFilter
+                      columnId="orderCode"
+                      columnTitle="Order Code"
+                      options={getDistinctValues("orderCode", (s) => s.orderCode)}
+                      selectedValues={columnFilters["orderCode"] || []}
+                      onApply={(vals) => setColumnFilter("orderCode", vals)}
+                      onClear={() => clearColumnFilter("orderCode")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Shipment Status</span>
+                    <ColumnFilter
+                      columnId="status"
+                      columnTitle="Shipment Status"
+                      options={getDistinctValues("status", (s) => s.status?.replace(/_/g, " "))}
+                      selectedValues={columnFilters["status"] || []}
+                      onApply={(vals) => setColumnFilter("status", vals)}
+                      onClear={() => clearColumnFilter("status")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Current Hub / Location</span>
+                    <ColumnFilter
+                      columnId="lastScanLocation"
+                      columnTitle="Location"
+                      options={getDistinctValues("lastScanLocation", (s) => s.lastScanLocation)}
+                      selectedValues={columnFilters["lastScanLocation"] || []}
+                      onApply={(vals) => setColumnFilter("lastScanLocation", vals)}
+                      onClear={() => clearColumnFilter("lastScanLocation")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">Latest Scan Activity</th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <DateSortHeader
+                    title="Estimated Delivery"
+                    columnId="etd"
+                    currentSortColumn={sortColumn}
+                    currentSortDirection={sortDirection}
+                    onSortChange={toggleDateSort}
+                  >
+                    <ColumnFilter
+                      columnId="etd"
+                      columnTitle="Estimated Delivery"
+                      options={getDistinctValues("etd", (s) => formatShortDate(s.etd))}
+                      selectedValues={columnFilters["etd"] || []}
+                      onApply={(vals) => setColumnFilter("etd", vals)}
+                      onClear={() => clearColumnFilter("etd")}
+                    />
+                  </DateSortHeader>
+                </th>
                 <th className="py-2.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -97,12 +221,12 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-stone-400">Loading tracking telemetry...</td>
                 </tr>
-              ) : filtered.length === 0 ? (
+              ) : paginatedShipments.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-stone-400">No shipments found in this category.</td>
                 </tr>
               ) : (
-                filtered.map((s) => {
+                paginatedShipments.map((s) => {
                   const isDelivered = s.status === "DELIVERED";
                   const isException = s.status === "DELIVERY_EXCEPTION" || s.status === "RTO" || s.status === "UNDELIVERED";
                   return (
@@ -150,6 +274,14 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
             </tbody>
           </table>
         </div>
+        <DataTablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalRecords={totalRecords}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* Events Modal */}

@@ -84,8 +84,30 @@ export class ShipmentService {
     let isUnmatched = false;
 
     if (!matchedOrderId) {
-      // Attempt match 1: By provider order ID or Uniware order code
-      if (parsed.providerOrderId) {
+      // Attempt match 1: Check if any existing shipment across any provider already has this AWB and an order
+      const existingCrossProviderShipment = await prisma.shipment.findFirst({
+        where: {
+          awbWaybill: parsed.awbWaybill,
+          orderId: { not: null },
+        },
+        include: { order: true },
+      });
+
+      if (existingCrossProviderShipment && existingCrossProviderShipment.orderId) {
+        matchedOrderId = existingCrossProviderShipment.orderId;
+        matchConfidence = "CROSS_PROVIDER_AWB_MATCH";
+
+        // Clean up any stale placeholder KOAL shipment for this order
+        await prisma.shipment.deleteMany({
+          where: {
+            orderId: matchedOrderId,
+            awbWaybill: { startsWith: "KOAL", mode: "insensitive" },
+          },
+        }).catch(() => {});
+      }
+
+      // Attempt match 2: By provider order ID or Uniware order code
+      if (!matchedOrderId && parsed.providerOrderId) {
         const order = await prisma.order.findFirst({
           where: {
             OR: [
@@ -97,6 +119,14 @@ export class ShipmentService {
         if (order) {
           matchedOrderId = order.id;
           matchConfidence = "ORDER_CODE_MATCH";
+
+          // Clean up any stale placeholder KOAL shipment for this order
+          await prisma.shipment.deleteMany({
+            where: {
+              orderId: matchedOrderId,
+              awbWaybill: { startsWith: "KOAL", mode: "insensitive" },
+            },
+          }).catch(() => {});
         }
       }
 

@@ -1,9 +1,12 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Download, Printer, Plus, Edit2, Search, CheckCircle2, AlertCircle, X, Shield, RefreshCw } from "lucide-react";
+import { Download, Printer, Plus, Edit2, Search, CheckCircle2, AlertCircle, X, Shield, RefreshCw, FilterX } from "lucide-react";
 import { formatShortDate } from "@/lib/utils";
 import { useCachedFetch } from "@/lib/useCachedFetch";
+import { ColumnFilter } from "@/components/ui/ColumnFilter";
+import { DataTablePagination } from "@/components/ui/DataTablePagination";
+import { useTableFiltersAndPagination } from "@/components/ui/useTableFiltersAndPagination";
 
 export const ProductMasterView: React.FC<{ searchFilter?: string }> = ({ searchFilter }) => {
   const [localSearch, setLocalSearch] = useState("");
@@ -42,6 +45,45 @@ export const ProductMasterView: React.FC<{ searchFilter?: string }> = ({ searchF
   } = useCachedFetch<any>(productsUrl);
 
   const products = (productsData?.products || []) as any[];
+
+  // Table filtering and pagination hook
+  const {
+    currentPage,
+    pageSize,
+    totalPages,
+    totalRecords,
+    columnFilters,
+    filteredData: filteredProducts,
+    paginatedData: paginatedProducts,
+    hasActiveFilters,
+    setCurrentPage,
+    setPageSize,
+    setColumnFilter,
+    clearColumnFilter,
+    clearAllFilters,
+    getDistinctValues,
+  } = useTableFiltersAndPagination<any>(products, {
+    searchFilter: searchFilter || localSearch,
+    searchFields: [
+      (p) => p.code,
+      (p) => p.name,
+      (p) => p.category,
+      (p) => p.description,
+      (p) => p.domesticPackingType,
+      (p) => p.exportPackingType,
+    ],
+    customFilterFn: (p, filters) => {
+      if (filters.status && filters.status.length > 0) {
+        const statusLabel = p.isActive ? "Active" : "Inactive";
+        if (!filters.status.includes(statusLabel)) return false;
+      }
+      if (filters.leadTime && filters.leadTime.length > 0) {
+        const lt = `${p.defaultLeadTimeDays || 7} days`;
+        if (!filters.leadTime.includes(lt)) return false;
+      }
+      return true;
+    },
+  });
 
   const openAddModal = () => {
     setEditingProduct(null);
@@ -225,6 +267,16 @@ export const ProductMasterView: React.FC<{ searchFilter?: string }> = ({ searchF
         </div>
 
         <div className="flex items-center space-x-3">
+          {hasActiveFilters && (
+            <button
+              onClick={clearAllFilters}
+              className="flex items-center space-x-1 px-2.5 py-1 text-xs text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition font-medium"
+            >
+              <FilterX className="w-3.5 h-3.5" />
+              <span>Clear All Filters</span>
+            </button>
+          )}
+
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
@@ -262,15 +314,111 @@ export const ProductMasterView: React.FC<{ searchFilter?: string }> = ({ searchF
           <table className="w-full text-left text-xs">
             <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
               <tr>
-                <th className="py-2.5 px-4">SKU Code</th>
-                <th className="py-2.5 px-4">Product Name</th>
-                <th className="py-2.5 px-4">Category</th>
-                <th className="py-2.5 px-4">UOM</th>
-                <th className="py-2.5 px-4">Lead Time</th>
-                <th className="py-2.5 px-4">Domestic Packaging</th>
-                <th className="py-2.5 px-4">Export Packaging</th>
-                <th className="py-2.5 px-4">FG Stock (P / U)</th>
-                <th className="py-2.5 px-4">Status</th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>SKU Code</span>
+                    <ColumnFilter
+                      columnId="code"
+                      columnTitle="SKU Code"
+                      options={getDistinctValues("code", (p) => p.code)}
+                      selectedValues={columnFilters["code"] || []}
+                      onApply={(vals) => setColumnFilter("code", vals)}
+                      onClear={() => clearColumnFilter("code")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Product Name</span>
+                    <ColumnFilter
+                      columnId="name"
+                      columnTitle="Product Name"
+                      options={getDistinctValues("name", (p) => p.name)}
+                      selectedValues={columnFilters["name"] || []}
+                      onApply={(vals) => setColumnFilter("name", vals)}
+                      onClear={() => clearColumnFilter("name")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Category</span>
+                    <ColumnFilter
+                      columnId="category"
+                      columnTitle="Category"
+                      options={getDistinctValues("category", (p) => p.category || "General")}
+                      selectedValues={columnFilters["category"] || []}
+                      onApply={(vals) => setColumnFilter("category", vals)}
+                      onClear={() => clearColumnFilter("category")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>UOM</span>
+                    <ColumnFilter
+                      columnId="unitOfManufacture"
+                      columnTitle="UOM"
+                      options={getDistinctValues("unitOfManufacture", (p) => p.unitOfManufacture || "PCS")}
+                      selectedValues={columnFilters["unitOfManufacture"] || []}
+                      onApply={(vals) => setColumnFilter("unitOfManufacture", vals)}
+                      onClear={() => clearColumnFilter("unitOfManufacture")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Lead Time</span>
+                    <ColumnFilter
+                      columnId="leadTime"
+                      columnTitle="Lead Time"
+                      options={getDistinctValues("leadTime", (p) => `${p.defaultLeadTimeDays || 7} days`)}
+                      selectedValues={columnFilters["leadTime"] || []}
+                      onApply={(vals) => setColumnFilter("leadTime", vals)}
+                      onClear={() => clearColumnFilter("leadTime")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Domestic Packaging</span>
+                    <ColumnFilter
+                      columnId="domesticPackingType"
+                      columnTitle="Domestic Packaging"
+                      options={getDistinctValues("domesticPackingType", (p) => p.domesticPackingType || "Standard Box")}
+                      selectedValues={columnFilters["domesticPackingType"] || []}
+                      onApply={(vals) => setColumnFilter("domesticPackingType", vals)}
+                      onClear={() => clearColumnFilter("domesticPackingType")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Export Packaging</span>
+                    <ColumnFilter
+                      columnId="exportPackingType"
+                      columnTitle="Export Packaging"
+                      options={getDistinctValues("exportPackingType", (p) => p.exportPackingType || "Export Wooden Crate")}
+                      selectedValues={columnFilters["exportPackingType"] || []}
+                      onApply={(vals) => setColumnFilter("exportPackingType", vals)}
+                      onClear={() => clearColumnFilter("exportPackingType")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">FG Stock (P / U)</th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Status</span>
+                    <ColumnFilter
+                      columnId="status"
+                      columnTitle="Status"
+                      options={getDistinctValues("status", (p) => p.isActive ? "Active" : "Inactive")}
+                      selectedValues={columnFilters["status"] || []}
+                      onApply={(vals) => setColumnFilter("status", vals)}
+                      onClear={() => clearColumnFilter("status")}
+                    />
+                  </div>
+                </th>
                 <th className="py-2.5 px-4 text-right no-print">Actions</th>
               </tr>
             </thead>
@@ -279,12 +427,12 @@ export const ProductMasterView: React.FC<{ searchFilter?: string }> = ({ searchF
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-stone-400">Loading product catalog...</td>
                 </tr>
-              ) : filtered.length === 0 ? (
+              ) : paginatedProducts.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-stone-400">No products found matching filters.</td>
                 </tr>
               ) : (
-                filtered.map((p) => {
+                paginatedProducts.map((p) => {
                   const packedStock = p.finishedStock?.find((s: any) => s.bucket === "PACKED")?.quantityOnHand || 0;
                   const unpackedStock = p.finishedStock?.find((s: any) => s.bucket === "UNPACKED")?.quantityOnHand || 0;
 
@@ -351,6 +499,14 @@ export const ProductMasterView: React.FC<{ searchFilter?: string }> = ({ searchF
             </tbody>
           </table>
         </div>
+        <DataTablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalRecords={totalRecords}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* Add / Edit Modal */}

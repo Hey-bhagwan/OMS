@@ -14,10 +14,15 @@ import {
   Search,
   X,
   MessageSquare,
+  FilterX,
 } from "lucide-react";
 import { formatShortDate, formatDate } from "@/lib/utils";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import { OrderPrintView } from "@/components/OrderPrintView";
+import { ColumnFilter } from "@/components/ui/ColumnFilter";
+import { DataTablePagination } from "@/components/ui/DataTablePagination";
+import { useTableFiltersAndPagination } from "@/components/ui/useTableFiltersAndPagination";
+import { DateSortHeader } from "@/components/ui/DateSortHeader";
 
 export const ProductionView: React.FC<{ searchFilter?: string; onNavigateToOrder?: (orderId: string) => void }> = ({ searchFilter, onNavigateToOrder }) => {
   const [statusFilter, setStatusFilter] = useState("");
@@ -43,6 +48,51 @@ export const ProductionView: React.FC<{ searchFilter?: string; onNavigateToOrder
   } = useCachedFetch<any>(productionUrl);
 
   const tasks = (prodData?.tasks || []) as any[];
+
+  // Table filtering and pagination hook
+  const {
+    currentPage,
+    pageSize,
+    totalPages,
+    totalRecords,
+    columnFilters,
+    filteredData: filteredTasks,
+    paginatedData: paginatedTasks,
+    hasActiveFilters,
+    sortColumn,
+    sortDirection,
+    toggleDateSort,
+    setCurrentPage,
+    setPageSize,
+    setColumnFilter,
+    clearColumnFilter,
+    clearAllFilters,
+    getDistinctValues,
+  } = useTableFiltersAndPagination<any>(tasks, {
+    searchFilter: searchFilter || localSearch,
+    dateSortExtractors: {
+      targetDate: (t) => t.expectedCompletionDate,
+    },
+    searchFields: [
+      (t) => t.code,
+      (t) => t.skuCode,
+      (t) => t.skuName,
+      (t) => t.orderCode,
+      (t) => t.displayOrderCode,
+      (t) => t.notes,
+    ],
+    customFilterFn: (t, filters) => {
+      if (filters.status && filters.status.length > 0) {
+        const formattedStatus = t.status?.replace(/_/g, " ");
+        if (!filters.status.includes(formattedStatus) && !filters.status.includes(t.status)) return false;
+      }
+      if (filters.targetDate && filters.targetDate.length > 0) {
+        const dt = formatShortDate(t.expectedCompletionDate);
+        if (!filters.targetDate.includes(dt)) return false;
+      }
+      return true;
+    },
+  });
   const handleStartWork = async (taskId: string, code: string) => {
     try {
       const res = await fetch(`/api/production/${taskId}/start`, { method: "POST" });
@@ -236,15 +286,27 @@ export const ProductionView: React.FC<{ searchFilter?: string; onNavigateToOrder
           </button>
         </div>
 
-        <div className="relative w-56">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-stone-400" />
-          <input
-            type="text"
-            placeholder="Search WO code, SKU, order..."
-            value={localSearch}
-            onChange={(e) => setLocalSearch(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 bg-stone-50 border border-stone-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-[#a27b5c]"
-          />
+        <div className="flex items-center space-x-2">
+          {hasActiveFilters && (
+            <button
+              onClick={clearAllFilters}
+              className="flex items-center space-x-1 px-2.5 py-1 text-xs text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition font-medium"
+            >
+              <FilterX className="w-3.5 h-3.5" />
+              <span>Clear All Filters</span>
+            </button>
+          )}
+
+          <div className="relative w-56">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-stone-400" />
+            <input
+              type="text"
+              placeholder="Search WO code, SKU, order..."
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 bg-stone-50 border border-stone-200 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-[#a27b5c]"
+            />
+          </div>
         </div>
       </div>
 
@@ -254,15 +316,116 @@ export const ProductionView: React.FC<{ searchFilter?: string; onNavigateToOrder
           <table className="w-full text-left text-xs">
             <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
               <tr>
-                <th className="py-2.5 px-4">WO Code</th>
-                <th className="py-2.5 px-4">Product / SKU</th>
-                <th className="py-2.5 px-4">Linked Order</th>
-                <th className="py-2.5 px-4 text-center">Req. Qty</th>
-                <th className="py-2.5 px-4 text-center">Completed</th>
-                <th className="py-2.5 px-4 text-center">Rejected</th>
-                <th className="py-2.5 px-4">Status</th>
-                <th className="py-2.5 px-4">Target Date</th>
-                <th className="py-2.5 px-4">Notes & Remarks</th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>WO Code</span>
+                    <ColumnFilter
+                      columnId="code"
+                      columnTitle="WO Code"
+                      options={getDistinctValues("code", (t) => t.code)}
+                      selectedValues={columnFilters["code"] || []}
+                      onApply={(vals) => setColumnFilter("code", vals)}
+                      onClear={() => clearColumnFilter("code")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Product / SKU</span>
+                    <ColumnFilter
+                      columnId="skuCode"
+                      columnTitle="SKU"
+                      options={getDistinctValues("skuCode", (t) => t.skuCode)}
+                      selectedValues={columnFilters["skuCode"] || []}
+                      onApply={(vals) => setColumnFilter("skuCode", vals)}
+                      onClear={() => clearColumnFilter("skuCode")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Linked Order</span>
+                    <ColumnFilter
+                      columnId="orderCode"
+                      columnTitle="Order Code"
+                      options={getDistinctValues("orderCode", (t) => t.orderCode)}
+                      selectedValues={columnFilters["orderCode"] || []}
+                      onApply={(vals) => setColumnFilter("orderCode", vals)}
+                      onClear={() => clearColumnFilter("orderCode")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 text-center whitespace-nowrap">
+                  <div className="flex items-center justify-center space-x-1">
+                    <span>Req. Qty</span>
+                    <ColumnFilter
+                      columnId="quantityRequired"
+                      columnTitle="Req. Qty"
+                      options={getDistinctValues("quantityRequired", (t) => String(t.quantityRequired))}
+                      selectedValues={columnFilters["quantityRequired"] || []}
+                      onApply={(vals) => setColumnFilter("quantityRequired", vals)}
+                      onClear={() => clearColumnFilter("quantityRequired")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 text-center whitespace-nowrap">
+                  <div className="flex items-center justify-center space-x-1">
+                    <span>Completed</span>
+                    <ColumnFilter
+                      columnId="quantityCompleted"
+                      columnTitle="Completed"
+                      options={getDistinctValues("quantityCompleted", (t) => String(t.quantityCompleted))}
+                      selectedValues={columnFilters["quantityCompleted"] || []}
+                      onApply={(vals) => setColumnFilter("quantityCompleted", vals)}
+                      onClear={() => clearColumnFilter("quantityCompleted")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 text-center whitespace-nowrap">
+                  <div className="flex items-center justify-center space-x-1">
+                    <span>Rejected</span>
+                    <ColumnFilter
+                      columnId="quantityRejected"
+                      columnTitle="Rejected"
+                      options={getDistinctValues("quantityRejected", (t) => String(t.quantityRejected || 0))}
+                      selectedValues={columnFilters["quantityRejected"] || []}
+                      onApply={(vals) => setColumnFilter("quantityRejected", vals)}
+                      onClear={() => clearColumnFilter("quantityRejected")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Status</span>
+                    <ColumnFilter
+                      columnId="status"
+                      columnTitle="Status"
+                      options={getDistinctValues("status", (t) => t.status?.replace(/_/g, " "))}
+                      selectedValues={columnFilters["status"] || []}
+                      onApply={(vals) => setColumnFilter("status", vals)}
+                      onClear={() => clearColumnFilter("status")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <DateSortHeader
+                    title="Target Date"
+                    columnId="targetDate"
+                    currentSortColumn={sortColumn}
+                    currentSortDirection={sortDirection}
+                    onSortChange={toggleDateSort}
+                  >
+                    <ColumnFilter
+                      columnId="targetDate"
+                      columnTitle="Target Date"
+                      options={getDistinctValues("targetDate", (t) => formatShortDate(t.expectedCompletionDate))}
+                      selectedValues={columnFilters["targetDate"] || []}
+                      onApply={(vals) => setColumnFilter("targetDate", vals)}
+                      onClear={() => clearColumnFilter("targetDate")}
+                    />
+                  </DateSortHeader>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">Notes & Remarks</th>
                 <th className="py-2.5 px-4 text-right no-print">Actions</th>
               </tr>
             </thead>
@@ -271,12 +434,12 @@ export const ProductionView: React.FC<{ searchFilter?: string; onNavigateToOrder
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-stone-400">Loading work orders...</td>
                 </tr>
-              ) : filtered.length === 0 ? (
+              ) : paginatedTasks.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-stone-400">No production work orders found.</td>
                 </tr>
               ) : (
-                filtered.map((t) => (
+                paginatedTasks.map((t) => (
                   <tr key={t.id} className="hover:bg-stone-50/70 transition align-top">
                     <td className="py-2.5 px-4 font-mono font-bold text-stone-900">{t.code}</td>
                     <td className="py-2.5 px-4">
@@ -366,12 +529,20 @@ export const ProductionView: React.FC<{ searchFilter?: string; onNavigateToOrder
             </tbody>
           </table>
         </div>
+        <DataTablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalRecords={totalRecords}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* Simplified Print Output */}
       <OrderPrintView
         pageTitle="Production Work Orders"
-        orders={filtered.map((t) => ({
+        orders={filteredTasks.map((t) => ({
           orderId: t.orderId,
           orderCode: t.orderCode,
           displayOrderCode: t.displayOrderCode,

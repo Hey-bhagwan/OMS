@@ -1,8 +1,12 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Users, UserPlus, CheckCircle2 } from "lucide-react";
+import { Users, UserPlus, CheckCircle2, FilterX } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { ColumnFilter } from "@/components/ui/ColumnFilter";
+import { DataTablePagination } from "@/components/ui/DataTablePagination";
+import { useTableFiltersAndPagination } from "@/components/ui/useTableFiltersAndPagination";
+import { DateSortHeader } from "@/components/ui/DateSortHeader";
 
 export const UsersView: React.FC = () => {
   const [users, setUsers] = useState<any[]>([]);
@@ -13,6 +17,37 @@ export const UsersView: React.FC = () => {
   const [role, setRole] = useState("OPERATIONS_MANAGER");
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+
+  const {
+    currentPage,
+    pageSize,
+    totalPages,
+    totalRecords,
+    columnFilters,
+    filteredData,
+    paginatedData,
+    hasActiveFilters,
+    sortColumn,
+    sortDirection,
+    toggleDateSort,
+    setCurrentPage,
+    setPageSize,
+    setColumnFilter,
+    clearColumnFilter,
+    clearAllFilters,
+    getDistinctValues,
+  } = useTableFiltersAndPagination<any>(users, {
+    dateSortExtractors: {
+      createdAt: (u) => u.createdAt,
+    },
+    customFilterFn: (u, filters) => {
+      if (filters.createdAt && filters.createdAt.length > 0) {
+        const d = formatDate(u.createdAt);
+        if (!filters.createdAt.includes(d)) return false;
+      }
+      return true;
+    },
+  });
 
   const fetchUsers = () => {
     setLoading(true);
@@ -64,13 +99,24 @@ export const UsersView: React.FC = () => {
             Granular role-based permissions across Admins, Operations, Inventory, Production, Packing, Dispatch, and Auditors
           </p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#a27b5c] hover:bg-[#8a6549] text-white rounded text-xs font-semibold transition"
-        >
-          <UserPlus className="w-3.5 h-3.5" />
-          <span>Add Staff Member</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {hasActiveFilters && (
+            <button
+              onClick={clearAllFilters}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md transition"
+            >
+              <FilterX className="w-3.5 h-3.5" />
+              <span>Clear Filters</span>
+            </button>
+          )}
+          <button
+            onClick={() => setShowModal(true)}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#a27b5c] hover:bg-[#8a6549] text-white rounded text-xs font-semibold transition"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            <span>Add Staff Member</span>
+          </button>
+        </div>
       </div>
 
       {msg && (
@@ -85,11 +131,64 @@ export const UsersView: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
               <tr>
-                <th className="py-2.5 px-4">Staff Name</th>
-                <th className="py-2.5 px-4">Email Address</th>
-                <th className="py-2.5 px-4">Assigned Role</th>
+                <th className="py-2.5 px-4">
+                  <div className="flex items-center justify-between">
+                    <span>Staff Name</span>
+                    <ColumnFilter
+                      columnId="name"
+                      columnTitle="Staff Name"
+                      options={getDistinctValues("name", (u) => u.name)}
+                      selectedValues={columnFilters["name"] || []}
+                      onApply={(vals) => setColumnFilter("name", vals)}
+                      onClear={() => clearColumnFilter("name")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4">
+                  <div className="flex items-center justify-between">
+                    <span>Email Address</span>
+                    <ColumnFilter
+                      columnId="email"
+                      columnTitle="Email Address"
+                      options={getDistinctValues("email", (u) => u.email)}
+                      selectedValues={columnFilters["email"] || []}
+                      onApply={(vals) => setColumnFilter("email", vals)}
+                      onClear={() => clearColumnFilter("email")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4">
+                  <div className="flex items-center justify-between">
+                    <span>Assigned Role</span>
+                    <ColumnFilter
+                      columnId="role"
+                      columnTitle="Assigned Role"
+                      options={getDistinctValues("role", (u) => u.role)}
+                      selectedValues={columnFilters["role"] || []}
+                      onApply={(vals) => setColumnFilter("role", vals)}
+                      onClear={() => clearColumnFilter("role")}
+                    />
+                  </div>
+                </th>
                 <th className="py-2.5 px-4">Status</th>
-                <th className="py-2.5 px-4">Created Date</th>
+                <th className="py-2.5 px-4">
+                  <DateSortHeader
+                    title="Created Date"
+                    columnId="createdAt"
+                    currentSortColumn={sortColumn}
+                    currentSortDirection={sortDirection}
+                    onSortChange={toggleDateSort}
+                  >
+                    <ColumnFilter
+                      columnId="createdAt"
+                      columnTitle="Created Date"
+                      options={getDistinctValues("createdAt", (u) => formatDate(u.createdAt))}
+                      selectedValues={columnFilters["createdAt"] || []}
+                      onApply={(vals) => setColumnFilter("createdAt", vals)}
+                      onClear={() => clearColumnFilter("createdAt")}
+                    />
+                  </DateSortHeader>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
@@ -97,8 +196,12 @@ export const UsersView: React.FC = () => {
                 <tr>
                   <td colSpan={5} className="py-12 text-center text-stone-400">Loading users...</td>
                 </tr>
+              ) : paginatedData.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-12 text-center text-stone-400">No users found matching your filters.</td>
+                </tr>
               ) : (
-                users.map((u) => (
+                paginatedData.map((u) => (
                   <tr key={u.id} className="hover:bg-stone-50/70 transition">
                     <td className="py-2.5 px-4 font-semibold text-stone-800">{u.name}</td>
                     <td className="py-2.5 px-4 font-mono text-stone-600">{u.email}</td>
@@ -117,6 +220,15 @@ export const UsersView: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        <DataTablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalRecords={totalRecords}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* Add User Modal */}

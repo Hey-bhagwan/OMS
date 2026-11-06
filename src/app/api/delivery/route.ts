@@ -31,8 +31,32 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    // Deduplicate shipments by orderId if multiple exist for the same order:
+    // Prefer non-KOAL (real tracking) shipments and shipments with higher activity/status.
+    const seenOrders = new Set<string>();
+    const deduplicatedShipments: typeof shipments = [];
+
+    // First pass: Sort order-linked shipments so real courier shipments come before dummy KOAL ones
+    const sorted = [...shipments].sort((a, b) => {
+      const aIsKoal = a.awbWaybill.toUpperCase().startsWith("KOAL");
+      const bIsKoal = b.awbWaybill.toUpperCase().startsWith("KOAL");
+      if (aIsKoal && !bIsKoal) return 1;
+      if (!aIsKoal && bIsKoal) return -1;
+      return (b.events.length || 0) - (a.events.length || 0);
+    });
+
+    for (const s of sorted) {
+      if (s.orderId) {
+        if (seenOrders.has(s.orderId)) {
+          continue; // Skip secondary/duplicate shipment for this order
+        }
+        seenOrders.add(s.orderId);
+      }
+      deduplicatedShipments.push(s);
+    }
+
     return NextResponse.json({
-      shipments: shipments.map((s) => ({
+      shipments: deduplicatedShipments.map((s) => ({
         id: s.id,
         awb: s.awbWaybill,
         courier: s.courierName,

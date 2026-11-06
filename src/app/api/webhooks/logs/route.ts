@@ -12,6 +12,8 @@ export async function GET(req: NextRequest) {
     const provider = searchParams.get("provider") || undefined;
     const status = searchParams.get("status") || undefined;
     const search = searchParams.get("search")?.trim() || "";
+    const sortBy = searchParams.get("sortBy") || "receivedAt";
+    const sortOrder = searchParams.get("sortOrder") === "asc" ? "asc" : "desc";
 
     const where: any = {};
     if (provider) {
@@ -28,11 +30,14 @@ export async function GET(req: NextRequest) {
       ];
     }
 
+    const validSortFields = ["receivedAt", "createdAt"];
+    const sortField = validSortFields.includes(sortBy) ? sortBy : "receivedAt";
+
     const [total, receipts] = await Promise.all([
       prisma.webhookReceipt.count({ where }),
       prisma.webhookReceipt.findMany({
         where,
-        orderBy: { receivedAt: "desc" },
+        orderBy: { [sortField]: sortOrder },
         skip: (page - 1) * limit,
         take: limit,
       }),

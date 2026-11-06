@@ -746,14 +746,28 @@ export class UniwareSyncService {
     // Process shipping packages if provided by Uniware (creates or updates Shipment tracking)
     if (Array.isArray(dto.shippingPackages) && dto.shippingPackages.length > 0) {
       for (const pkg of dto.shippingPackages) {
-        const awb = String(
-          pkg.trackingNumber ||
-            pkg.channelShipmentCode ||
-            pkg.code ||
-            "",
-        ).trim();
+        // Priority: actual tracking number / courier waybill, fallback to channel shipment code
+        // Only use pkg.code as last resort if trackingNumber is not present.
+        const trackingNum = String(pkg.trackingNumber || pkg.channelShipmentCode || "").trim();
+        const packageCode = String(pkg.code || "").trim();
+        const awb = trackingNum || packageCode;
 
         if (awb) {
+          const isRealTracking = Boolean(trackingNum && !/^KOAL\d+$/i.test(trackingNum));
+
+          // If this package now has a real courier tracking number, clean up any previous dummy/placeholder
+          // KOAL shipment created for this order so we don't display duplicate rows.
+          if (isRealTracking) {
+            await prisma.shipment.deleteMany({
+              where: {
+                orderId: order.id,
+                awbWaybill: { startsWith: "KOAL", mode: "insensitive" },
+              },
+            }).catch(() => {
+              // Ignore if already deleted or referenced
+            });
+          }
+
           const pkgStatus = String(pkg.status || "").toUpperCase();
           let normalizedStatus: "SHIPMENT_CREATED" | "READY_FOR_PICKUP" | "PICKED_UP" | "IN_TRANSIT" | "OUT_FOR_DELIVERY" | "DELIVERED" | "CANCELLED" = "SHIPMENT_CREATED";
 
@@ -778,39 +792,60 @@ export class UniwareSyncService {
 
           const scanLocation = (pkg.city || shippingAddr?.city || undefined) as string | undefined;
 
-          await prisma.shipment.upsert({
-            where: {
-              provider_awbWaybill: {
+          // If a shipment with this exact AWB already exists (e.g. ingested via Shiprocket/Cargo webhook),
+          // update that shipment record to link it with this order rather than creating duplicate.
+          const existingAnyProviderShipment = await prisma.shipment.findFirst({
+            where: { awbWaybill: awb },
+          });
+
+          if (existingAnyProviderShipment) {
+            await prisma.shipment.update({
+              where: { id: existingAnyProviderShipment.id },
+              data: {
+                orderId: order.id,
+                uniwareOrderCode: order.uniwareOrderCode,
+                isUnmatched: false,
+                matchConfidence: "EXACT_AWB",
+                courierName: existingAnyProviderShipment.courierName === "Shiprocket Cargo" || existingAnyProviderShipment.courierName === "Shiprocket Courier"
+                  ? courierName || existingAnyProviderShipment.courierName
+                  : courierName,
+              },
+            });
+          } else {
+            await prisma.shipment.upsert({
+              where: {
+                provider_awbWaybill: {
+                  provider: "UNIWARE",
+                  awbWaybill: awb,
+                },
+              },
+              update: {
+                orderId: order.id,
+                uniwareOrderCode: order.uniwareOrderCode,
+                courierName,
+                normalizedStatus,
+                providerStatus: pkgStatus,
+                dispatchedAt: dispatchedAt || undefined,
+                deliveredAt: deliveredAt || undefined,
+                currentScanActivity: `Package status: ${pkgStatus}`,
+                currentScanLocation: scanLocation,
+              },
+              create: {
+                orderId: order.id,
+                uniwareOrderCode: order.uniwareOrderCode,
                 provider: "UNIWARE",
                 awbWaybill: awb,
+                courierName,
+                normalizedStatus,
+                providerStatus: pkgStatus,
+                dispatchedAt,
+                deliveredAt,
+                currentScanActivity: `Package status: ${pkgStatus}`,
+                currentScanLocation: scanLocation,
+                matchConfidence: isRealTracking ? "EXACT_AWB" : "FALLBACK_PACKAGE_CODE",
               },
-            },
-            update: {
-              orderId: order.id,
-              uniwareOrderCode: order.uniwareOrderCode,
-              courierName,
-              normalizedStatus,
-              providerStatus: pkgStatus,
-              dispatchedAt: dispatchedAt || undefined,
-              deliveredAt: deliveredAt || undefined,
-              currentScanActivity: `Package status: ${pkgStatus}`,
-              currentScanLocation: scanLocation,
-            },
-            create: {
-              orderId: order.id,
-              uniwareOrderCode: order.uniwareOrderCode,
-              provider: "UNIWARE",
-              awbWaybill: awb,
-              courierName,
-              normalizedStatus,
-              providerStatus: pkgStatus,
-              dispatchedAt,
-              deliveredAt,
-              currentScanActivity: `Package status: ${pkgStatus}`,
-              currentScanLocation: scanLocation,
-              matchConfidence: "EXACT_AWB",
-            },
-          });
+            });
+          }
         }
       }
     }

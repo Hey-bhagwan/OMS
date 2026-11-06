@@ -15,10 +15,15 @@ import {
   Send,
   Clock,
   UserCheck,
+  FilterX,
 } from "lucide-react";
 import { formatShortDate, formatDate } from "@/lib/utils";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import { OrderPrintView } from "@/components/OrderPrintView";
+import { ColumnFilter } from "@/components/ui/ColumnFilter";
+import { DataTablePagination } from "@/components/ui/DataTablePagination";
+import { useTableFiltersAndPagination } from "@/components/ui/useTableFiltersAndPagination";
+import { DateSortHeader } from "@/components/ui/DateSortHeader";
 
 function getValidForwardStages(currentStage: string): { stage: string; label: string; color: string }[] {
   switch (currentStage) {
@@ -248,16 +253,63 @@ export const OrdersView: React.FC<{
     }
   };
 
-  const filteredOrders = orders.filter((o) => {
-    if (!searchFilter) return true;
-    const q = searchFilter.toLowerCase();
-    return (
-      o.uniwareOrderCode?.toLowerCase().includes(q) ||
-      o.displayOrderCode?.toLowerCase().includes(q) ||
-      o.primarySku?.toLowerCase().includes(q) ||
-      o.shippingAddressCity?.toLowerCase().includes(q) ||
-      o.items?.some((it: any) => it.skuCode?.toLowerCase().includes(q) || it.skuName?.toLowerCase().includes(q))
-    );
+  // Table filtering and pagination hook
+  const {
+    currentPage,
+    pageSize,
+    totalPages,
+    totalRecords,
+    columnFilters,
+    filteredData: filteredOrders,
+    paginatedData: paginatedOrders,
+    hasActiveFilters,
+    sortColumn,
+    sortDirection,
+    toggleDateSort,
+    setCurrentPage,
+    setPageSize,
+    setColumnFilter,
+    clearColumnFilter,
+    clearAllFilters,
+    getDistinctValues,
+  } = useTableFiltersAndPagination<any>(orders, {
+    searchFilter,
+    dateSortExtractors: {
+      orderDate: (o) => o.orderDate || o.displayOrderDateTime || o.createdAt,
+      fulfillmentDeadline: (o) => o.fulfillmentDeadline,
+    },
+    searchFields: [
+      (o) => o.uniwareOrderCode,
+      (o) => o.displayOrderCode,
+      (o) => o.primarySku,
+      (o) => o.primaryProductName,
+      (o) => o.shippingAddressCity,
+      (o) => o.items?.map((it: any) => `${it.skuCode} ${it.skuName}`).join(" "),
+    ],
+    customFilterFn: (o, filters) => {
+      // Custom checks if needed for multi-value fields
+      if (filters.primarySku && filters.primarySku.length > 0) {
+        const orderSkus = o.items?.map((it: any) => it.skuCode) || [o.primarySku];
+        if (!orderSkus.some((s: string) => filters.primarySku.includes(s))) return false;
+      }
+      if (filters.totalQty && filters.totalQty.length > 0) {
+        const qty = String(o.items?.reduce((sum: number, l: any) => sum + (l.quantity || 0), 0) || o.totalItems || 1);
+        if (!filters.totalQty.includes(qty)) return false;
+      }
+      if (filters.orderDate && filters.orderDate.length > 0) {
+        const dateStr = formatShortDate(o.orderDate || o.createdAt);
+        if (!filters.orderDate.includes(dateStr)) return false;
+      }
+      if (filters.fulfillmentDeadline && filters.fulfillmentDeadline.length > 0) {
+        const dl = formatShortDate(o.fulfillmentDeadline);
+        if (!filters.fulfillmentDeadline.includes(dl)) return false;
+      }
+      if (filters.blocker && filters.blocker.length > 0) {
+        const b = o.blockerReason || "None";
+        if (!filters.blocker.includes(b)) return false;
+      }
+      return true;
+    },
   });
 
   return (
@@ -329,6 +381,15 @@ export const OrdersView: React.FC<{
         </div>
 
         <div className="flex items-center space-x-2">
+          {hasActiveFilters && (
+            <button
+              onClick={clearAllFilters}
+              className="flex items-center space-x-1 px-2.5 py-1 text-xs text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition font-medium"
+            >
+              <FilterX className="w-3.5 h-3.5" />
+              <span>Clear All Filters</span>
+            </button>
+          )}
           <select
             value={channelFilter}
             onChange={(e) => setChannelFilter(e.target.value)}
@@ -350,16 +411,146 @@ export const OrdersView: React.FC<{
           <table className="w-full text-left text-xs">
             <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
               <tr>
-                <th className="py-2.5 px-4">Order Code</th>
-                <th className="py-2.5 px-4">Order Date</th>
-                <th className="py-2.5 px-4">Channel</th>
-                <th className="py-2.5 px-4">Items / SKU</th>
-                <th className="py-2.5 px-4 text-center">Total Qty</th>
-                <th className="py-2.5 px-4">Internal Stage</th>
-                <th className="py-2.5 px-4">Packaging</th>
-                <th className="py-2.5 px-4">Priority</th>
-                <th className="py-2.5 px-4">Fulfillment Deadline</th>
-                <th className="py-2.5 px-4">Blocker / Next Action</th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Order Code</span>
+                    <ColumnFilter
+                      columnId="uniwareOrderCode"
+                      columnTitle="Order Code"
+                      options={getDistinctValues("uniwareOrderCode", (o) => o.uniwareOrderCode)}
+                      selectedValues={columnFilters["uniwareOrderCode"] || []}
+                      onApply={(vals) => setColumnFilter("uniwareOrderCode", vals)}
+                      onClear={() => clearColumnFilter("uniwareOrderCode")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <DateSortHeader
+                    title="Order Date"
+                    columnId="orderDate"
+                    currentSortColumn={sortColumn}
+                    currentSortDirection={sortDirection}
+                    onSortChange={toggleDateSort}
+                  >
+                    <ColumnFilter
+                      columnId="orderDate"
+                      columnTitle="Order Date"
+                      options={getDistinctValues("orderDate", (o) => formatShortDate(o.orderDate || o.createdAt))}
+                      selectedValues={columnFilters["orderDate"] || []}
+                      onApply={(vals) => setColumnFilter("orderDate", vals)}
+                      onClear={() => clearColumnFilter("orderDate")}
+                    />
+                  </DateSortHeader>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Channel</span>
+                    <ColumnFilter
+                      columnId="channel"
+                      columnTitle="Channel"
+                      options={getDistinctValues("channel", (o) => o.channel)}
+                      selectedValues={columnFilters["channel"] || []}
+                      onApply={(vals) => setColumnFilter("channel", vals)}
+                      onClear={() => clearColumnFilter("channel")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Items / SKU</span>
+                    <ColumnFilter
+                      columnId="primarySku"
+                      columnTitle="Items / SKU"
+                      options={getDistinctValues("primarySku", (o) => o.items?.map((it: any) => it.skuCode) || [o.primarySku])}
+                      selectedValues={columnFilters["primarySku"] || []}
+                      onApply={(vals) => setColumnFilter("primarySku", vals)}
+                      onClear={() => clearColumnFilter("primarySku")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 text-center whitespace-nowrap">
+                  <div className="flex items-center justify-center space-x-1">
+                    <span>Total Qty</span>
+                    <ColumnFilter
+                      columnId="totalQty"
+                      columnTitle="Total Qty"
+                      options={getDistinctValues("totalQty", (o) => String(o.items?.reduce((sum: number, l: any) => sum + (l.quantity || 0), 0) || o.totalItems || 1))}
+                      selectedValues={columnFilters["totalQty"] || []}
+                      onApply={(vals) => setColumnFilter("totalQty", vals)}
+                      onClear={() => clearColumnFilter("totalQty")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Internal Stage</span>
+                    <ColumnFilter
+                      columnId="internalStage"
+                      columnTitle="Internal Stage"
+                      options={getDistinctValues("internalStage", (o) => o.internalStage)}
+                      selectedValues={columnFilters["internalStage"] || []}
+                      onApply={(vals) => setColumnFilter("internalStage", vals)}
+                      onClear={() => clearColumnFilter("internalStage")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Packaging</span>
+                    <ColumnFilter
+                      columnId="packagingType"
+                      columnTitle="Packaging"
+                      options={getDistinctValues("packagingType", (o) => o.packagingType)}
+                      selectedValues={columnFilters["packagingType"] || []}
+                      onApply={(vals) => setColumnFilter("packagingType", vals)}
+                      onClear={() => clearColumnFilter("packagingType")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Priority</span>
+                    <ColumnFilter
+                      columnId="priorityLabel"
+                      columnTitle="Priority"
+                      options={getDistinctValues("priorityLabel", (o) => o.priorityLabel)}
+                      selectedValues={columnFilters["priorityLabel"] || []}
+                      onApply={(vals) => setColumnFilter("priorityLabel", vals)}
+                      onClear={() => clearColumnFilter("priorityLabel")}
+                    />
+                  </div>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <DateSortHeader
+                    title="Fulfillment Deadline"
+                    columnId="fulfillmentDeadline"
+                    currentSortColumn={sortColumn}
+                    currentSortDirection={sortDirection}
+                    onSortChange={toggleDateSort}
+                  >
+                    <ColumnFilter
+                      columnId="fulfillmentDeadline"
+                      columnTitle="Fulfillment Deadline"
+                      options={getDistinctValues("fulfillmentDeadline", (o) => formatShortDate(o.fulfillmentDeadline))}
+                      selectedValues={columnFilters["fulfillmentDeadline"] || []}
+                      onApply={(vals) => setColumnFilter("fulfillmentDeadline", vals)}
+                      onClear={() => clearColumnFilter("fulfillmentDeadline")}
+                    />
+                  </DateSortHeader>
+                </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <div className="flex items-center justify-between">
+                    <span>Blocker / Next Action</span>
+                    <ColumnFilter
+                      columnId="blocker"
+                      columnTitle="Blocker"
+                      options={getDistinctValues("blocker", (o) => o.blockerReason || "None")}
+                      selectedValues={columnFilters["blocker"] || []}
+                      onApply={(vals) => setColumnFilter("blocker", vals)}
+                      onClear={() => clearColumnFilter("blocker")}
+                    />
+                  </div>
+                </th>
                 <th className="py-2.5 px-4 text-right no-print">Actions</th>
               </tr>
             </thead>
@@ -368,12 +559,12 @@ export const OrdersView: React.FC<{
                 <tr>
                   <td colSpan={11} className="py-12 text-center text-stone-400">Loading orders...</td>
                 </tr>
-              ) : filteredOrders.length === 0 ? (
+              ) : paginatedOrders.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="py-12 text-center text-stone-400">No orders found matching filters.</td>
                 </tr>
               ) : (
-                filteredOrders.map((o) => (
+                paginatedOrders.map((o) => (
                   <tr
                     key={o.id}
                     ref={(el) => {
@@ -477,6 +668,14 @@ export const OrdersView: React.FC<{
             </tbody>
           </table>
         </div>
+        <DataTablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalRecords={totalRecords}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* Simplified Print Output */}
