@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/server/db/prisma";
 import { startOfDay, subDays } from "date-fns";
+import { calculateOrderPriority } from "@/server/services/workflow.service";
 
 export const dynamic = "force-dynamic";
 
@@ -211,6 +212,13 @@ export async function GET() {
         const lastRemark = o.remarks[0]?.text || o.staffRemark || null;
         const lastActivity = o.stageHistory[0]?.reason || o.nextAction || null;
 
+        const priorityInfo = calculateOrderPriority({
+          fulfillmentDeadline: o.fulfillmentDeadline,
+          internalStage: o.internalStage,
+          blockerReason: o.blockerReason,
+          createdAt: o.createdAt,
+        });
+
         return {
           id: o.id,
           orderCode: o.uniwareOrderCode,
@@ -231,8 +239,9 @@ export async function GET() {
           nextAction: o.nextAction || "Proceed with workflow",
           lastRemark,
           lastActivity,
-          priorityLabel: o.priorityLabel,
-          priorityScore: o.priorityScore,
+          priorityLabel: priorityInfo.label,
+          priorityScore: priorityInfo.score,
+          priorityReason: priorityInfo.reason,
           createdAt: o.createdAt,
         };
       }),

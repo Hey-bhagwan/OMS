@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db/prisma";
 import { InternalStage } from "@prisma/client";
-import { workflowService } from "@/server/services/workflow.service";
+import { workflowService, calculateOrderPriority } from "@/server/services/workflow.service";
 import { getSessionUser } from "@/server/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -110,44 +110,54 @@ export async function GET(req: NextRequest) {
     ]);
 
     return NextResponse.json({
-      orders: orders.map((o) => ({
-        id: o.id,
-        uniwareOrderCode: o.uniwareOrderCode,
-        displayOrderCode: o.displayOrderCode,
-        channel: o.channel,
-        uniwareStatus: o.uniwareStatus,
-        internalStage: o.internalStage,
-        packagingType: o.packagingType,
-        destinationCountry: o.destinationCountry,
-        shippingAddressCity: o.shippingAddressCity,
-        totalAmount: Number(o.totalAmount),
-        currency: o.currency,
-        isCod: o.isCod,
-        fulfillmentDeadline: o.fulfillmentDeadline,
-        priorityScore: o.priorityScore,
-        priorityLabel: o.priorityLabel,
-        blockerReason: o.blockerReason,
-        nextAction: o.nextAction,
-        createdAt: o.createdAt,
-        orderDate: o.displayOrderDateTime || o.createdAt,
-        totalItems: o.lines.reduce((sum, l) => sum + l.quantity, 0),
-        items: o.lines.map((l) => ({
-          id: l.id,
-          skuCode: l.sku.code,
-          skuName: l.sku.name,
-          quantity: l.quantity,
-          allocatedPackedQty: l.allocatedPackedQty,
-          allocatedUnpackedQty: l.allocatedUnpackedQty,
-          requiredProductionQty: l.requiredProductionQty,
-          requiredRawMaterialQty: l.requiredRawMaterialQty,
-          packedCompletedQty: l.packedCompletedQty,
-          unitPrice: Number(l.unitPrice),
-        })),
-        primarySku: o.lines[0]?.sku.code || "N/A",
-        primaryProductName: o.lines[0]?.sku.name || "N/A",
-        awb: o.shipments[0]?.awbWaybill,
-        shipmentStatus: o.shipments[0]?.normalizedStatus,
-      })),
+      orders: orders.map((o) => {
+        const priorityInfo = calculateOrderPriority({
+          fulfillmentDeadline: o.fulfillmentDeadline,
+          internalStage: o.internalStage,
+          blockerReason: o.blockerReason,
+          createdAt: o.createdAt,
+        });
+
+        return {
+          id: o.id,
+          uniwareOrderCode: o.uniwareOrderCode,
+          displayOrderCode: o.displayOrderCode,
+          channel: o.channel,
+          uniwareStatus: o.uniwareStatus,
+          internalStage: o.internalStage,
+          packagingType: o.packagingType,
+          destinationCountry: o.destinationCountry,
+          shippingAddressCity: o.shippingAddressCity,
+          totalAmount: Number(o.totalAmount),
+          currency: o.currency,
+          isCod: o.isCod,
+          fulfillmentDeadline: o.fulfillmentDeadline,
+          priorityScore: priorityInfo.score,
+          priorityLabel: priorityInfo.label,
+          priorityReason: priorityInfo.reason,
+          blockerReason: o.blockerReason,
+          nextAction: o.nextAction,
+          createdAt: o.createdAt,
+          orderDate: o.displayOrderDateTime || o.createdAt,
+          totalItems: o.lines.reduce((sum, l) => sum + l.quantity, 0),
+          items: o.lines.map((l) => ({
+            id: l.id,
+            skuCode: l.sku.code,
+            skuName: l.sku.name,
+            quantity: l.quantity,
+            allocatedPackedQty: l.allocatedPackedQty,
+            allocatedUnpackedQty: l.allocatedUnpackedQty,
+            requiredProductionQty: l.requiredProductionQty,
+            requiredRawMaterialQty: l.requiredRawMaterialQty,
+            packedCompletedQty: l.packedCompletedQty,
+            unitPrice: Number(l.unitPrice),
+          })),
+          primarySku: o.lines[0]?.sku.code || "N/A",
+          primaryProductName: o.lines[0]?.sku.name || "N/A",
+          awb: o.shipments[0]?.awbWaybill,
+          shipmentStatus: o.shipments[0]?.normalizedStatus,
+        };
+      }),
       pagination: {
         page,
         limit,

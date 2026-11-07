@@ -5,6 +5,7 @@ export interface PriorityCalculationResult {
   score: number;
   label: "LOW" | "NORMAL" | "HIGH" | "URGENT" | "OVERDUE";
   isOverdue: boolean;
+  reason?: string;
 }
 
 export function calculateOrderPriority(params: {
@@ -15,36 +16,64 @@ export function calculateOrderPriority(params: {
 }): PriorityCalculationResult {
   const { fulfillmentDeadline, internalStage, blockerReason, createdAt } = params;
   const now = new Date();
+
+  // If order has progressed past dispatch into DELIVERY (courier in-transit / delivered),
+  // fulfillment deadline (which governs factory dispatch SLA) no longer makes the order URGENT/OVERDUE.
+  if (internalStage === "DELIVERY") {
+    return {
+      score: 20,
+      label: "LOW",
+      isOverdue: false,
+      reason: "Order has already been dispatched to courier; in delivery phase",
+    };
+  }
+
   let score = 50; // base score
+  const reasons: string[] = [];
 
   // Order age factor (each day adds 3 points, up to 30 max)
   const ageDays = Math.floor((now.getTime() - createdAt.getTime()) / (24 * 3600 * 1000));
-  score += Math.min(30, Math.max(0, ageDays * 3));
+  const ageBonus = Math.min(30, Math.max(0, ageDays * 3));
+  score += ageBonus;
+  if (ageDays >= 3) {
+    reasons.push(`Order open for ${ageDays} days`);
+  }
 
   let isOverdue = false;
 
-  // Deadline evaluation
+  // Deadline evaluation (applicable pre-dispatch)
   if (fulfillmentDeadline) {
     const msUntilDeadline = fulfillmentDeadline.getTime() - now.getTime();
     if (msUntilDeadline < 0) {
       isOverdue = true;
       score += 40; // Overdue penalty
+      const daysOverdue = Math.ceil(Math.abs(msUntilDeadline) / (24 * 3600 * 1000));
+      reasons.unshift(`Fulfillment deadline passed ${daysOverdue} day(s) ago`);
     } else if (msUntilDeadline < 24 * 3600 * 1000) {
       score += 25; // Due within 24 hours
+      reasons.unshift("Fulfillment deadline due within 24 hours");
     } else if (msUntilDeadline < 48 * 3600 * 1000) {
       score += 15; // Due within 48 hours
+      reasons.unshift("Fulfillment deadline due within 48 hours");
     }
   }
 
   // Blocker factor
   if (blockerReason) {
     score += 15;
+    reasons.push(`Active blocker: ${blockerReason}`);
   }
 
   // Stage weight
-  if (internalStage === "DELIVERY_EXCEPTION") score += 30;
-  if (internalStage === "RAW_MATERIAL") score += 10;
-  if (internalStage === "ON_HOLD") score -= 10;
+  if (internalStage === "DELIVERY_EXCEPTION") {
+    score += 30;
+    reasons.unshift("Delivery exception / RTO reported by courier");
+  } else if (internalStage === "RAW_MATERIAL") {
+    score += 10;
+  } else if (internalStage === "ON_HOLD") {
+    score -= 10;
+    reasons.push("Order currently placed on hold");
+  }
 
   let label: "LOW" | "NORMAL" | "HIGH" | "URGENT" | "OVERDUE" = "NORMAL";
   if (isOverdue) {
@@ -57,7 +86,9 @@ export function calculateOrderPriority(params: {
     label = "LOW";
   }
 
-  return { score, label, isOverdue };
+  const reasonStr = reasons.length > 0 ? reasons.join(" • ") : `Standard fulfillment priority (${label})`;
+
+  return { score, label, isOverdue, reason: reasonStr };
 }
 
 export interface WorkflowEvaluationResult {
@@ -812,6 +843,19 @@ export class WorkflowService {
           changesJson: JSON.stringify({ fromStage: prevStage, toStage: targetStage, reason }),
         },
       });
+
+      // If moving past packing (e.g. to DISPATCH or DELIVERY), complete any remaining packing tasks
+      if (["DISPATCH", "DELIVERY", "DELIVERY_EXCEPTION", "CANCELLED", "RTO"].includes(targetStage)) {
+        await tx.packingTask.updateMany({
+          where: {
+            orderId,
+            status: { not: "COMPLETED" },
+          },
+          data: {
+            status: "COMPLETED",
+          },
+        });
+      }
 
       return updated;
     });

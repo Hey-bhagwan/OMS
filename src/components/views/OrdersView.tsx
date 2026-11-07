@@ -24,6 +24,8 @@ import { ColumnFilter } from "@/components/ui/ColumnFilter";
 import { DataTablePagination } from "@/components/ui/DataTablePagination";
 import { useTableFiltersAndPagination } from "@/components/ui/useTableFiltersAndPagination";
 import { DateSortHeader } from "@/components/ui/DateSortHeader";
+import { PriorityOrderCode } from "@/components/ui/PriorityOrderCode";
+import { OrderInspectDrawer } from "@/components/OrderInspectDrawer";
 
 function getValidForwardStages(currentStage: string): { stage: string; label: string; color: string }[] {
   switch (currentStage) {
@@ -82,6 +84,8 @@ export const OrdersView: React.FC<{
   const [stageFilter, setStageFilter] = useState<string>("");
   const [channelFilter, setChannelFilter] = useState<string>("");
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+  const [inspectLoading, setInspectLoading] = useState(false);
+  const [loadingOrderId, setLoadingOrderId] = useState<string | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [transitionMsg, setTransitionMsg] = useState<string | null>(null);
 
@@ -139,12 +143,17 @@ export const OrdersView: React.FC<{
   }, [activeHighlight, orders]);
 
   const viewOrderDetails = async (orderId: string) => {
+    setInspectLoading(true);
+    setLoadingOrderId(orderId);
     try {
       const res = await fetch(`/api/orders/${orderId}`);
       const data = await res.json();
       if (data.order) setSelectedOrder(data.order);
     } catch (err) {
       console.error(err);
+    } finally {
+      setInspectLoading(false);
+      setLoadingOrderId(null);
     }
   };
 
@@ -412,17 +421,7 @@ export const OrdersView: React.FC<{
             <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
               <tr>
                 <th className="py-2.5 px-4 whitespace-nowrap">
-                  <div className="flex items-center justify-between">
-                    <span>Order Code</span>
-                    <ColumnFilter
-                      columnId="uniwareOrderCode"
-                      columnTitle="Order Code"
-                      options={getDistinctValues("uniwareOrderCode", (o) => o.uniwareOrderCode)}
-                      selectedValues={columnFilters["uniwareOrderCode"] || []}
-                      onApply={(vals) => setColumnFilter("uniwareOrderCode", vals)}
-                      onClear={() => clearColumnFilter("uniwareOrderCode")}
-                    />
-                  </div>
+                  <span>Order Code</span>
                 </th>
                 <th className="py-2.5 px-4 whitespace-nowrap">
                   <DateSortHeader
@@ -508,19 +507,6 @@ export const OrdersView: React.FC<{
                   </div>
                 </th>
                 <th className="py-2.5 px-4 whitespace-nowrap">
-                  <div className="flex items-center justify-between">
-                    <span>Priority</span>
-                    <ColumnFilter
-                      columnId="priorityLabel"
-                      columnTitle="Priority"
-                      options={getDistinctValues("priorityLabel", (o) => o.priorityLabel)}
-                      selectedValues={columnFilters["priorityLabel"] || []}
-                      onApply={(vals) => setColumnFilter("priorityLabel", vals)}
-                      onClear={() => clearColumnFilter("priorityLabel")}
-                    />
-                  </div>
-                </th>
-                <th className="py-2.5 px-4 whitespace-nowrap">
                   <DateSortHeader
                     title="Fulfillment Deadline"
                     columnId="fulfillmentDeadline"
@@ -557,11 +543,11 @@ export const OrdersView: React.FC<{
             <tbody className="divide-y divide-stone-100">
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-stone-400">Loading orders...</td>
+                  <td colSpan={10} className="py-12 text-center text-stone-400">Loading orders...</td>
                 </tr>
               ) : paginatedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-stone-400">No orders found matching filters.</td>
+                  <td colSpan={10} className="py-12 text-center text-stone-400">No orders found matching filters.</td>
                 </tr>
               ) : (
                 paginatedOrders.map((o) => (
@@ -578,10 +564,17 @@ export const OrdersView: React.FC<{
                     }`}
                   >
                     <td className="py-2.5 px-4">
-                      <span className="font-mono font-bold text-stone-900 block">{o.uniwareOrderCode}</span>
-                      {o.displayOrderCode && (
-                        <span className="text-[10px] text-stone-500 block truncate">{o.displayOrderCode}</span>
-                      )}
+                      <PriorityOrderCode
+                        orderCode={o.uniwareOrderCode}
+                        displayOrderCode={o.displayOrderCode}
+                        priorityLabel={o.priorityLabel}
+                        priorityReason={o.priorityReason}
+                        priorityScore={o.priorityScore}
+                        fulfillmentDeadline={o.fulfillmentDeadline}
+                        blockerReason={o.blocker}
+                        internalStage={o.internalStage}
+                        onClick={() => viewOrderDetails(o.id)}
+                      />
                     </td>
                     <td className="py-2.5 px-4 text-stone-600 whitespace-nowrap">
                       <span className="text-stone-800 font-medium block">
@@ -627,21 +620,6 @@ export const OrdersView: React.FC<{
                         {o.packagingType}
                       </span>
                     </td>
-                    <td className="py-2.5 px-4">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          o.priorityLabel === "OVERDUE"
-                            ? "bg-rose-100 text-rose-800 border border-rose-300"
-                            : o.priorityLabel === "URGENT"
-                            ? "bg-orange-100 text-orange-800"
-                            : o.priorityLabel === "HIGH"
-                            ? "bg-amber-100 text-amber-800"
-                            : "bg-stone-100 text-stone-600"
-                        }`}
-                      >
-                        {o.priorityLabel}
-                      </span>
-                    </td>
                     <td className="py-2.5 px-4 text-stone-600">
                       {formatShortDate(o.fulfillmentDeadline)}
                     </td>
@@ -656,10 +634,24 @@ export const OrdersView: React.FC<{
                     <td className="py-2.5 px-4 text-right no-print">
                       <button
                         onClick={() => viewOrderDetails(o.id)}
-                        className="px-2.5 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded text-[11px] font-medium transition inline-flex items-center space-x-1"
+                        disabled={loadingOrderId === o.id}
+                        className={`px-2.5 py-1 rounded text-[11px] font-medium transition inline-flex items-center space-x-1.5 ${
+                          loadingOrderId === o.id
+                            ? "bg-amber-100 text-amber-800 border border-amber-300 animate-pulse"
+                            : "bg-stone-100 hover:bg-stone-200 text-stone-700"
+                        }`}
                       >
-                        <Eye className="w-3 h-3" />
-                        <span>Inspect</span>
+                        {loadingOrderId === o.id ? (
+                          <>
+                            <div className="w-3 h-3 border-2 border-[#a27b5c] border-t-transparent rounded-full animate-spin" />
+                            <span>Loading...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="w-3 h-3" />
+                            <span>Inspect</span>
+                          </>
+                        )}
                       </button>
                     </td>
                   </tr>
@@ -691,334 +683,16 @@ export const OrdersView: React.FC<{
       />
 
       {/* Order Detail Drawer */}
-      {selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/40 backdrop-blur-xs no-print">
-          <div className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-stone-200 flex items-center justify-between bg-stone-50">
-              <div>
-                <h3 className="text-base font-bold text-stone-900 font-mono">
-                  {selectedOrder.uniwareOrderCode}
-                </h3>
-                <span className="text-xs text-stone-500">
-                  {selectedOrder.displayOrderCode} • {selectedOrder.channel}
-                </span>
-              </div>
-              <button
-                onClick={() => setSelectedOrder(null)}
-                className="p-1 rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-200"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Content Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Status & Priority Badge */}
-              <div className="flex items-center justify-between p-3 bg-stone-50 rounded-lg border border-stone-200">
-                <div>
-                  <span className="text-[10px] font-semibold text-stone-500 uppercase block">Current Stage</span>
-                  <span className="text-sm font-bold text-stone-900">{selectedOrder.internalStage}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-semibold text-stone-500 uppercase block">Uniware Status</span>
-                  <span className="text-xs font-medium text-stone-700">{selectedOrder.uniwareStatus}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-semibold text-stone-500 uppercase block">Packaging</span>
-                  <span className="text-xs font-semibold text-purple-700">{selectedOrder.packagingType}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-semibold text-stone-500 uppercase block">Order Created Date</span>
-                  <span className="text-xs font-medium text-stone-800">{formatDate(selectedOrder.displayOrderDateTime || selectedOrder.createdAt)}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-semibold text-stone-500 uppercase block">Fulfillment Deadline</span>
-                  <span className="text-xs font-medium text-stone-800">{formatShortDate(selectedOrder.fulfillmentDeadline)}</span>
-                </div>
-              </div>
-
-              {/* Blocker & Next Action */}
-              {selectedOrder.blockerReason && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 space-y-1">
-                  <div className="font-semibold flex items-center space-x-1">
-                    <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
-                    <span>Active Blocker:</span>
-                  </div>
-                  <div>{selectedOrder.blockerReason}</div>
-                </div>
-              )}
-
-              {/* Line Items & Allocation Breakdown */}
-              <div>
-                <h4 className="text-xs font-semibold text-stone-900 uppercase tracking-wider mb-2">
-                  Line Items &amp; Inventory Allocation
-                </h4>
-                <div className="space-y-3">
-                  {selectedOrder.lines?.map((line: any) => (
-                    <div key={line.id} className="p-3 bg-stone-50 border border-stone-200 rounded-lg text-xs">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <span className="font-bold text-stone-900 block">{line.sku.code}</span>
-                          <span className="text-stone-600 text-[11px]">{line.sku.name}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="font-semibold text-stone-900">{line.quantity} Unit(s)</span>
-                        </div>
-                      </div>
-
-                      {/* Stock Allocation Breakdown */}
-                      <div className="grid grid-cols-5 gap-2 pt-2 border-t border-stone-200 text-center">
-                        <div className="p-1 bg-white rounded border border-stone-200">
-                          <span className="text-[10px] text-stone-500 block">Alloc. Packed</span>
-                          <span className="font-bold text-emerald-700">{line.allocatedPackedQty}</span>
-                        </div>
-                        <div className="p-1 bg-white rounded border border-stone-200">
-                          <span className="text-[10px] text-stone-500 block">Alloc. Unpacked</span>
-                          <span className="font-bold text-blue-700">{line.allocatedUnpackedQty}</span>
-                        </div>
-                        <div className="p-1 bg-white rounded border border-stone-200">
-                          <span className="text-[10px] text-stone-500 block">In Production</span>
-                          <span className="font-bold text-stone-800">{line.requiredProductionQty}</span>
-                        </div>
-                        <div className="p-1 bg-white rounded border border-stone-200">
-                          <span className="text-[10px] text-stone-500 block">Blocked Raw</span>
-                          <span className="font-bold text-red-700">{line.blockedRawMaterialQty}</span>
-                        </div>
-                        <div className="p-1 bg-white rounded border border-stone-200">
-                          <span className="text-[10px] text-stone-500 block">Pending RM</span>
-                          <span className="font-bold text-amber-700">{line.pendingAssessmentQty}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Explicit Manual Raw-Material Availability Decision */}
-              {(selectedOrder.internalStage === "RAW_MATERIAL" || selectedOrder.internalStage === "PRODUCTION") && (
-                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg text-xs space-y-2">
-                  <div className="flex items-center space-x-1.5 font-bold text-amber-900">
-                    <Boxes className="w-4 h-4 text-amber-700" />
-                    <span>Factory Staff Raw-Material Availability Decision</span>
-                  </div>
-                  <p className="text-[11px] text-stone-600">
-                    A human staff member must assess availability. Choose an explicit decision for quantities requiring manufacturing:
-                  </p>
-
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <button
-                      onClick={() => handleRawMaterialDecision("AVAILABLE")}
-                      disabled={rmSubmitting}
-                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded font-medium shadow-xs disabled:opacity-50"
-                    >
-                      Raw Material Available (Start Production)
-                    </button>
-                    <button
-                      onClick={() => setRmDecisionMode("UNAVAILABLE")}
-                      disabled={rmSubmitting}
-                      className="px-3 py-1.5 bg-red-700 hover:bg-red-800 text-white rounded font-medium shadow-xs disabled:opacity-50"
-                    >
-                      Raw Material Unavailable (Queue as Blocked)
-                    </button>
-                    <button
-                      onClick={() => handleRawMaterialDecision("PENDING_ASSESSMENT")}
-                      disabled={rmSubmitting}
-                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded font-medium shadow-xs disabled:opacity-50"
-                    >
-                      Mark Pending Assessment
-                    </button>
-                  </div>
-
-                  {rmDecisionMode === "UNAVAILABLE" && (
-                    <div className="pt-2 border-t border-amber-200 space-y-2">
-                      <label className="font-semibold text-stone-800 block">
-                        Mandatory Reason / Remark for Raw Material Shortage:
-                      </label>
-                      <textarea
-                        rows={2}
-                        required
-                        value={rmRemark}
-                        onChange={(e) => setRmRemark(e.target.value)}
-                        placeholder="e.g. Makrana slab thickness variation; waiting for quarry shipment..."
-                        className="w-full px-3 py-1.5 border border-amber-300 rounded bg-white text-xs focus:outline-none"
-                      />
-                      <div className="flex justify-end space-x-2">
-                        <button
-                          onClick={() => setRmDecisionMode(null)}
-                          className="px-3 py-1 border border-stone-300 rounded text-stone-700 bg-white"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => handleRawMaterialDecision("UNAVAILABLE")}
-                          disabled={rmSubmitting}
-                          className="px-3 py-1 bg-red-700 text-white rounded font-semibold"
-                        >
-                          Confirm Block
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Forward Stage Transitions */}
-              <div>
-                <h4 className="text-xs font-semibold text-stone-900 uppercase tracking-wider mb-2">
-                  Next Actions Ahead of Current State
-                </h4>
-                <div className="flex flex-wrap gap-2">
-                  {(selectedOrder.internalStage === "RAW_MATERIAL" || selectedOrder.internalStage === "PRODUCTION") && (
-                    <button
-                      disabled={isTransitioning}
-                      onClick={handleReallocate}
-                      className="px-3 py-1.5 bg-[#a27b5c] text-white text-xs font-medium rounded hover:bg-[#8a6549] transition disabled:opacity-50"
-                    >
-                      Re-run Stock Allocation
-                    </button>
-                  )}
-
-                  {getValidForwardStages(selectedOrder.internalStage).map((st) => (
-                    <button
-                      key={st.stage}
-                      disabled={isTransitioning}
-                      onClick={() => handleStageTransition(st.stage)}
-                      className={`px-3 py-1.5 text-xs font-medium rounded transition ${st.color}`}
-                    >
-                      {st.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Dedicated Activity and Remarks Section */}
-              <div className="space-y-3 pt-4 border-t border-stone-200">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-semibold text-stone-900 uppercase tracking-wider flex items-center space-x-1.5">
-                    <MessageSquare className="w-3.5 h-3.5 text-[#a27b5c]" />
-                    <span>Activity &amp; Internal Communication</span>
-                  </h4>
-
-                  {/* Filter Pills */}
-                  <div className="flex space-x-1 text-[11px]">
-                    <button
-                      onClick={() => setTimelineFilter("ALL")}
-                      className={`px-2 py-0.5 rounded transition ${
-                        timelineFilter === "ALL" ? "bg-stone-800 text-white" : "text-stone-500 hover:bg-stone-100"
-                      }`}
-                    >
-                      All Activity
-                    </button>
-                    <button
-                      onClick={() => setTimelineFilter("REMARKS")}
-                      className={`px-2 py-0.5 rounded transition ${
-                        timelineFilter === "REMARKS" ? "bg-stone-800 text-white" : "text-stone-500 hover:bg-stone-100"
-                      }`}
-                    >
-                      Remarks Only
-                    </button>
-                    <button
-                      onClick={() => setTimelineFilter("STAGES")}
-                      className={`px-2 py-0.5 rounded transition ${
-                        timelineFilter === "STAGES" ? "bg-stone-800 text-white" : "text-stone-500 hover:bg-stone-100"
-                      }`}
-                    >
-                      Stage Changes
-                    </button>
-                  </div>
-                </div>
-
-                {/* Add Remark Input */}
-                <form onSubmit={handleAddRemark} className="space-y-2">
-                  <textarea
-                    rows={2}
-                    value={newRemarkText}
-                    onChange={(e) => setNewRemarkText(e.target.value)}
-                    placeholder="Add an internal note or remark (saved without changing stage)..."
-                    className="w-full px-3 py-2 border border-stone-300 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-[#a27b5c]"
-                  />
-                  <div className="flex justify-end">
-                    <button
-                      type="submit"
-                      disabled={addingRemark || !newRemarkText.trim()}
-                      className="px-3 py-1.5 bg-[#a27b5c] hover:bg-[#8a6549] text-white rounded text-xs font-semibold transition disabled:opacity-50 flex items-center space-x-1"
-                    >
-                      <Send className="w-3 h-3" />
-                      <span>{addingRemark ? "Posting..." : "Post Remark"}</span>
-                    </button>
-                  </div>
-                </form>
-
-                {/* Combined Chronological Timeline */}
-                <div className="space-y-2.5 max-h-72 overflow-y-auto pt-2">
-                  {/* Merge remarks and stage history */}
-                  {(() => {
-                    const entries: any[] = [];
-                    if (timelineFilter !== "STAGES") {
-                      (selectedOrder.remarks || []).forEach((r: any) => {
-                        entries.push({
-                          id: r.id,
-                          type: "REMARK",
-                          date: new Date(r.createdAt),
-                          author: r.authorName,
-                          text: r.text,
-                          stage: r.stage,
-                        });
-                      });
-                    }
-                    if (timelineFilter !== "REMARKS") {
-                      (selectedOrder.stageHistory || []).forEach((h: any) => {
-                        entries.push({
-                          id: h.id,
-                          type: "STAGE",
-                          date: new Date(h.timestamp),
-                          toStage: h.toStage,
-                          text: h.reason,
-                        });
-                      });
-                    }
-
-                    entries.sort((a, b) => b.date.getTime() - a.date.getTime());
-
-                    if (entries.length === 0) {
-                      return <p className="text-stone-400 text-xs italic">No entries found for this view.</p>;
-                    }
-
-                    return entries.map((entry) => (
-                      <div
-                        key={entry.id}
-                        className={`p-2.5 rounded-lg border text-xs ${
-                          entry.type === "REMARK"
-                            ? "bg-amber-50/50 border-amber-200"
-                            : "bg-stone-50 border-stone-200"
-                        }`}
-                      >
-                        <div className="flex justify-between items-center mb-1">
-                          <div className="flex items-center space-x-1.5">
-                            <span
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                entry.type === "REMARK"
-                                  ? "bg-amber-200 text-amber-900"
-                                  : "bg-stone-200 text-stone-800"
-                              }`}
-                            >
-                              {entry.type === "REMARK" ? "STAFF REMARK" : entry.toStage}
-                            </span>
-                            {entry.author && <span className="font-semibold text-stone-800">{entry.author}</span>}
-                          </div>
-                          <span className="text-[10px] text-stone-400">{formatDate(entry.date)}</span>
-                        </div>
-                        <p className="text-stone-700 text-[11px] mt-0.5">{entry.text}</p>
-                      </div>
-                    ));
-                  })()}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <OrderInspectDrawer
+        orderId={selectedOrder?.id || loadingOrderId}
+        order={selectedOrder}
+        loading={inspectLoading}
+        onClose={() => setSelectedOrder(null)}
+        onRefresh={() => {
+          fetchOrders();
+          if (selectedOrder) viewOrderDetails(selectedOrder.id);
+        }}
+      />
     </div>
   );
 };

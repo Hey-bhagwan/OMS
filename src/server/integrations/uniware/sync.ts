@@ -975,6 +975,17 @@ export class UniwareSyncService {
               resolvedAt: new Date(),
             },
           });
+
+          // Mark any open packing tasks as completed since order has advanced to DISPATCH or DELIVERY
+          await prisma.packingTask.updateMany({
+            where: {
+              orderId: order.id,
+              status: { not: "COMPLETED" },
+            },
+            data: {
+              status: "COMPLETED",
+            },
+          });
         }
       }
     }

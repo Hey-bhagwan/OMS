@@ -11,6 +11,10 @@ export async function GET(req: NextRequest) {
     if (packagingType) where.packagingType = packagingType;
     if (!showCompleted) {
       where.status = { not: "COMPLETED" };
+      // Only show tasks for orders currently in PACKING stage (exclude orders already moved to DISPATCH/DELIVERY)
+      where.order = {
+        internalStage: "PACKING",
+      };
     }
 
     const tasks = await prisma.packingTask.findMany({
