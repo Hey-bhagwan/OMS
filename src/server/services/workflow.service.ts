@@ -17,7 +17,17 @@ export function calculateOrderPriority(params: {
   const { fulfillmentDeadline, internalStage, blockerReason, createdAt } = params;
   const now = new Date();
 
-  // If order has progressed past dispatch into DELIVERY (courier in-transit / delivered),
+  // If order is completed / delivered, priority is 0 (fulfilled, no further action required).
+  if (internalStage === "DELIVERED") {
+    return {
+      score: 0,
+      label: "LOW",
+      isOverdue: false,
+      reason: "Order delivered and fulfilled; no further action required",
+    };
+  }
+
+  // If order has progressed past dispatch into DELIVERY (courier in-transit),
   // fulfillment deadline (which governs factory dispatch SLA) no longer makes the order URGENT/OVERDUE.
   if (internalStage === "DELIVERY") {
     return {

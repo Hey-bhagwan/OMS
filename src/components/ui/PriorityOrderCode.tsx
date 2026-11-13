@@ -80,6 +80,9 @@ export function getPriorityExplanation(props: {
 }): string {
   if (props.priorityReason) return props.priorityReason;
 
+  if (props.internalStage === "DELIVERED") {
+    return "Order delivery has been confirmed by courier; order fulfilled.";
+  }
   if (props.internalStage === "DELIVERY") {
     return "Order has already been dispatched to courier; in delivery phase.";
   }

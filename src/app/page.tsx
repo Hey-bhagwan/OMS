@@ -30,6 +30,7 @@ export default function Home() {
   const [loginPass, setLoginPass] = useState("KoaLiving2026!");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Navigate-to-order state
   const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
@@ -62,7 +63,9 @@ export default function Home() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoggingIn) return;
     setLoginError(null);
+    setIsLoggingIn(true);
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
@@ -77,6 +80,8 @@ export default function Home() {
       }
     } catch {
       setLoginError("Login request failed");
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -87,8 +92,9 @@ export default function Home() {
 
   if (checkingAuth) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-[#faf9f8]">
-        <div className="text-stone-500 text-xs font-medium">Initializing Koa Living OMS...</div>
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#faf9f8] space-y-3">
+        <div className="w-8 h-8 border-3 border-[#a27b5c] border-t-transparent rounded-full animate-spin" />
+        <div className="text-stone-500 text-xs font-medium tracking-wide">Initializing Koa Living OMS...</div>
       </div>
     );
   }
@@ -118,9 +124,10 @@ export default function Home() {
               <input
                 type="email"
                 required
+                disabled={isLoggingIn}
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a27b5c]"
+                className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a27b5c] disabled:bg-stone-50 disabled:text-stone-400"
               />
             </div>
 
@@ -129,17 +136,26 @@ export default function Home() {
               <input
                 type="password"
                 required
+                disabled={isLoggingIn}
                 value={loginPass}
                 onChange={(e) => setLoginPass(e.target.value)}
-                className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a27b5c]"
+                className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a27b5c] disabled:bg-stone-50 disabled:text-stone-400"
               />
             </div>
 
             <button
               type="submit"
-              className="w-full py-2.5 bg-[#a27b5c] hover:bg-[#8a6549] text-white font-semibold rounded-lg shadow-sm transition text-xs"
+              disabled={isLoggingIn}
+              className="w-full py-2.5 bg-[#a27b5c] hover:bg-[#8a6549] disabled:bg-[#a27b5c]/70 text-white font-semibold rounded-lg shadow-sm transition text-xs flex items-center justify-center space-x-2 cursor-pointer disabled:cursor-not-allowed"
             >
-              Sign In to OMS
+              {isLoggingIn ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Signing In...</span>
+                </>
+              ) : (
+                <span>Sign In to OMS</span>
+              )}
             </button>
           </form>
 

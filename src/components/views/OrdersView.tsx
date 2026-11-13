@@ -56,6 +56,7 @@ function getValidForwardStages(currentStage: string): { stage: string; label: st
       ];
     case "DELIVERY":
       return [
+        { stage: "DELIVERED", label: "Mark Delivered", color: "bg-emerald-700 hover:bg-emerald-800 text-white" },
         { stage: "DELIVERY_EXCEPTION", label: "Flag Delivery Exception", color: "bg-pink-600 hover:bg-pink-700 text-white" },
         { stage: "RTO", label: "Trigger Return to Origin (RTO)", color: "bg-red-600 hover:bg-red-700 text-white" },
       ];
@@ -103,18 +104,24 @@ export const OrdersView: React.FC<{
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
   const [activeHighlight, setActiveHighlight] = useState<string | null>(null);
 
-  let ordersUrl = "/api/orders?limit=50";
-  if (stageFilter) ordersUrl += `&stage=${stageFilter}`;
-  if (channelFilter) ordersUrl += `&channel=${channelFilter}`;
-
+  // Fetch active pipeline orders (up to 5000) so stage tabs & channels filter client-side with 0ms lag
   const {
     data: ordersData,
     loading,
     isBackgroundFetching,
     refetch: fetchOrders,
-  } = useCachedFetch<any>(ordersUrl);
+  } = useCachedFetch<any>("/api/orders?limit=5000&scope=active");
 
-  const orders = (ordersData?.orders || []) as any[];
+  const allOrders = (ordersData?.orders || []) as any[];
+
+  // Client-side filtering by stage and channel
+  const orders = React.useMemo(() => {
+    return allOrders.filter((o) => {
+      if (stageFilter && o.internalStage !== stageFilter) return false;
+      if (channelFilter && o.channel !== channelFilter) return false;
+      return true;
+    });
+  }, [allOrders, stageFilter, channelFilter]);
 
   // When highlightOrderId changes, clear filters so the order is visible, then scroll & highlight
   useEffect(() => {
@@ -375,6 +382,7 @@ export const OrdersView: React.FC<{
             { id: "PACKING", label: "Packing" },
             { id: "DISPATCH", label: "Dispatch" },
             { id: "DELIVERY", label: "Delivery" },
+            { id: "DELIVERED", label: "Delivered" },
             { id: "ON_HOLD", label: "On Hold" },
           ].map((st) => (
             <button
@@ -599,8 +607,10 @@ export const OrdersView: React.FC<{
                     <td className="py-2.5 px-4">
                       <span
                         className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                          o.internalStage === "DELIVERY"
-                            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                          o.internalStage === "DELIVERED"
+                            ? "bg-emerald-600 text-white border-emerald-700"
+                            : o.internalStage === "DELIVERY"
+                            ? "bg-teal-50 text-teal-800 border-teal-200"
                             : o.internalStage === "RAW_MATERIAL"
                             ? "bg-amber-50 text-amber-800 border-amber-200"
                             : o.internalStage === "PRODUCTION"

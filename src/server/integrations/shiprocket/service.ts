@@ -1,6 +1,7 @@
 import { prisma } from "../../db/prisma";
 import { parseShipmentWebhookPayload, shouldUpdateShipmentStatus } from "./parser";
 import { NormalizedShipmentEvent } from "./types";
+import { uniwareSyncService } from "../uniware/sync";
 
 export class ShipmentService {
   /**
@@ -83,6 +84,44 @@ export class ShipmentService {
     let matchConfidence: string = shipment?.matchConfidence || "PENDING";
     let isUnmatched = false;
 
+    // If existing shipment was previously unmatched, try re-matching with any provided order ID
+    if (!matchedOrderId && parsed.providerOrderId) {
+      let order = await prisma.order.findFirst({
+        where: {
+          OR: [
+            { uniwareOrderCode: parsed.providerOrderId },
+            { displayOrderCode: parsed.providerOrderId },
+          ],
+        },
+      });
+
+      // If not found locally in DB, search and ingest directly from Unicommerce
+      if (!order) {
+        try {
+          const syncedOrder = await uniwareSyncService.processUniwareOrder(parsed.providerOrderId);
+          if (syncedOrder) {
+            order = syncedOrder;
+          }
+        } catch (syncErr: unknown) {
+          // Unicommerce lookup failed or order does not exist
+        }
+      }
+
+      if (order) {
+        matchedOrderId = order.id;
+        matchConfidence = "ORDER_CODE_MATCH";
+        isUnmatched = false;
+
+        // Clean up any stale placeholder KOAL shipment for this order
+        await prisma.shipment.deleteMany({
+          where: {
+            orderId: matchedOrderId,
+            awbWaybill: { startsWith: "KOAL", mode: "insensitive" },
+          },
+        }).catch(() => {});
+      }
+    }
+
     if (!matchedOrderId) {
       // Attempt match 1: Check if any existing shipment across any provider already has this AWB and an order
       const existingCrossProviderShipment = await prisma.shipment.findFirst({
@@ -96,6 +135,7 @@ export class ShipmentService {
       if (existingCrossProviderShipment && existingCrossProviderShipment.orderId) {
         matchedOrderId = existingCrossProviderShipment.orderId;
         matchConfidence = "CROSS_PROVIDER_AWB_MATCH";
+        isUnmatched = false;
 
         // Clean up any stale placeholder KOAL shipment for this order
         await prisma.shipment.deleteMany({
@@ -104,30 +144,6 @@ export class ShipmentService {
             awbWaybill: { startsWith: "KOAL", mode: "insensitive" },
           },
         }).catch(() => {});
-      }
-
-      // Attempt match 2: By provider order ID or Uniware order code
-      if (!matchedOrderId && parsed.providerOrderId) {
-        const order = await prisma.order.findFirst({
-          where: {
-            OR: [
-              { uniwareOrderCode: parsed.providerOrderId },
-              { displayOrderCode: parsed.providerOrderId },
-            ],
-          },
-        });
-        if (order) {
-          matchedOrderId = order.id;
-          matchConfidence = "ORDER_CODE_MATCH";
-
-          // Clean up any stale placeholder KOAL shipment for this order
-          await prisma.shipment.deleteMany({
-            where: {
-              orderId: matchedOrderId,
-              awbWaybill: { startsWith: "KOAL", mode: "insensitive" },
-            },
-          }).catch(() => {});
-        }
       }
 
       // If still unmatched, flag as unmatched
@@ -216,11 +232,13 @@ export class ShipmentService {
     //    Orders already at or beyond the implied target stage are never regressed.
     if (matchedOrderId) {
       if (parsed.normalizedStatus === "DELIVERED") {
-        // Terminal positive state — always update regardless of current stage.
+        // Terminal positive state — mark order DELIVERED with priority 0.
         await prisma.order.update({
           where: { id: matchedOrderId },
           data: {
-            internalStage: "DELIVERY",
+            internalStage: "DELIVERED",
+            priorityScore: 0,
+            priorityLabel: "LOW",
             nextAction: "Delivery confirmed by courier webhook. Order fulfilled.",
             blockerReason: null,
           },
@@ -229,7 +247,7 @@ export class ShipmentService {
         await prisma.orderStatusHistory.create({
           data: {
             orderId: matchedOrderId,
-            toStage: "DELIVERY",
+            toStage: "DELIVERED",
             reason: `Shipment #${parsed.awbWaybill} delivered via ${parsed.courierName}`,
           },
         });
@@ -327,6 +345,130 @@ export class ShipmentService {
       shipmentId: shipment.id,
       normalizedStatus: currentStatus,
       isUnmatched,
+    };
+  }
+
+  /**
+   * Reconcile any existing unlinked or unmatched shipments in the database:
+   * Looks up Unicommerce for their providerOrderId or awbWaybill and links newly found or existing orders.
+   */
+  public async reconcileExistingUnmatchedShipments(): Promise<{
+    checkedCount: number;
+    reconciledCount: number;
+    reconciledShipmentIds: string[];
+  }> {
+    const unlinkedShipments = await prisma.shipment.findMany({
+      where: {
+        OR: [
+          { isUnmatched: true },
+          { orderId: null },
+        ],
+      },
+      include: {
+        events: {
+          take: 1,
+          orderBy: { eventTimestamp: "desc" },
+        },
+      },
+    });
+
+    let reconciledCount = 0;
+    const reconciledShipmentIds: string[] = [];
+
+    for (const shipment of unlinkedShipments) {
+      let targetOrderCode: string | null = shipment.providerOrderId || shipment.uniwareOrderCode || null;
+
+      // Also inspect raw payload for order_id / channel_order_id if providerOrderId is null
+      if (!targetOrderCode && shipment.events[0]?.rawPayloadJson) {
+        try {
+          const raw = JSON.parse(shipment.events[0].rawPayloadJson);
+          targetOrderCode = String(raw.order_id || raw.orderId || raw.channel_order_id || "").trim() || null;
+        } catch {}
+      }
+
+      let matchedOrder = null;
+
+      if (targetOrderCode) {
+        // 1. Check local DB
+        matchedOrder = await prisma.order.findFirst({
+          where: {
+            OR: [
+              { uniwareOrderCode: targetOrderCode },
+              { displayOrderCode: targetOrderCode },
+            ],
+          },
+        });
+
+        // 2. If not in DB, fetch from Unicommerce and insert
+        if (!matchedOrder) {
+          try {
+            const synced = await uniwareSyncService.processUniwareOrder(targetOrderCode);
+            if (synced) {
+              matchedOrder = synced;
+            }
+          } catch {
+            // Unicommerce didn't have it or request failed
+          }
+        }
+      }
+
+      if (matchedOrder) {
+        // Link shipment to order and clear unmatched flags
+        await prisma.shipment.update({
+          where: { id: shipment.id },
+          data: {
+            orderId: matchedOrder.id,
+            uniwareOrderCode: matchedOrder.uniwareOrderCode,
+            isUnmatched: false,
+            matchConfidence: "ORDER_CODE_MATCH",
+          },
+        });
+
+        // Clean up any temporary placeholder KOAL shipments
+        await prisma.shipment.deleteMany({
+          where: {
+            orderId: matchedOrder.id,
+            awbWaybill: { startsWith: "KOAL", mode: "insensitive" },
+          },
+        }).catch(() => {});
+
+        // Advance order stage if appropriate
+        if (["PICKED_UP", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"].includes(shipment.normalizedStatus)) {
+          const preDeliveryStages = ["RAW_MATERIAL", "PRODUCTION", "PACKING", "DISPATCH"];
+          const currentOrder = await prisma.order.findUnique({
+            where: { id: matchedOrder.id },
+            select: { internalStage: true },
+          });
+
+          if (currentOrder && (preDeliveryStages.includes(currentOrder.internalStage) || shipment.normalizedStatus === "DELIVERED")) {
+            const nextStage = shipment.normalizedStatus === "DELIVERED" ? "DELIVERED" : "DELIVERY";
+            const actionText = shipment.normalizedStatus === "DELIVERED"
+              ? "Delivery confirmed by courier. Order fulfilled."
+              : `In transit via ${shipment.courierName} (AWB: ${shipment.awbWaybill}) — status: ${shipment.normalizedStatus}`;
+
+            await prisma.order.update({
+              where: { id: matchedOrder.id },
+              data: {
+                internalStage: nextStage,
+                ...(nextStage === "DELIVERED" ? { priorityScore: 0, priorityLabel: "LOW" } : {}),
+                nextAction: actionText,
+                blockerReason: null,
+              },
+            });
+
+            await this.cleanupOrderLinesOnShipmentAdvance(matchedOrder.id);
+          }
+        }
+
+        reconciledCount++;
+        reconciledShipmentIds.push(shipment.id);
+      }
+    }
+
+    return {
+      checkedCount: unlinkedShipments.length,
+      reconciledCount,
+      reconciledShipmentIds,
     };
   }
 }

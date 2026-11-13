@@ -173,6 +173,12 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
           { stage: "DELIVERY", label: "Mark Handed Over to Courier", color: "bg-teal-600 hover:bg-teal-700 text-white" },
           { stage: "ON_HOLD", label: "Place On Hold", color: "bg-yellow-100 hover:bg-yellow-200 text-yellow-900" },
         ];
+      case "DELIVERY":
+        return [
+          { stage: "DELIVERED", label: "Mark Delivered", color: "bg-emerald-700 hover:bg-emerald-800 text-white" },
+          { stage: "DELIVERY_EXCEPTION", label: "Flag Delivery Exception", color: "bg-pink-600 hover:bg-pink-700 text-white" },
+          { stage: "RTO", label: "Trigger Return to Origin (RTO)", color: "bg-red-600 hover:bg-red-700 text-white" },
+        ];
       case "DELIVERY_EXCEPTION":
         return [
           { stage: "DELIVERY", label: "Re-attempt Delivery", color: "bg-teal-600 hover:bg-teal-700 text-white" },

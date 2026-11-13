@@ -1,5 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db/prisma";
+import { shipmentService } from "@/server/integrations/shiprocket/service";
+
+export async function POST(req: NextRequest) {
+  try {
+    const result = await shipmentService.reconcileExistingUnmatchedShipments();
+    return NextResponse.json({
+      success: true,
+      message: `Reconciled ${result.reconciledCount} of ${result.checkedCount} unlinked shipments.`,
+      ...result,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -62,7 +77,7 @@ export async function GET(req: NextRequest) {
         courier: s.courierName,
         status: s.normalizedStatus,
         orderId: s.order?.id || null,
-        orderCode: s.order?.uniwareOrderCode || s.uniwareOrderCode || "Unmatched",
+        orderCode: s.order?.uniwareOrderCode || s.uniwareOrderCode || s.providerOrderId || "Awaiting Order Link",
         displayOrderCode: s.order?.displayOrderCode,
         destinationCity: s.order?.shippingAddressCity || s.currentScanLocation,
         lastScanLocation: s.currentScanLocation || "In Transit Hub",

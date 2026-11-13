@@ -25,6 +25,7 @@ export interface SyncRunResult {
 
 type InternalStage =
   | "DELIVERY"
+  | "DELIVERED"
   | "CANCELLED"
   | "PRODUCTION"
   | "RAW_MATERIAL";
@@ -898,7 +899,7 @@ export class UniwareSyncService {
         const preDispatchStages = ["RAW_MATERIAL", "PRODUCTION", "PACKING"];
         const preDeliveryStages = [...preDispatchStages, "DISPATCH"];
 
-        let impliedStage: "DISPATCH" | "DELIVERY" | null = null;
+        let impliedStage: "DISPATCH" | "DELIVERY" | "DELIVERED" | null = null;
 
         if (
           linkedShipment.normalizedStatus === "SHIPMENT_CREATED" ||
@@ -907,12 +908,13 @@ export class UniwareSyncService {
           if (preDispatchStages.includes(freshOrder.internalStage)) {
             impliedStage = "DISPATCH";
           }
+        } else if (linkedShipment.normalizedStatus === "DELIVERED") {
+          impliedStage = "DELIVERED";
         } else if (
           linkedShipment.normalizedStatus === "PICKED_UP" ||
           linkedShipment.normalizedStatus === "IN_TRANSIT" ||
           linkedShipment.normalizedStatus === "OUT_FOR_DELIVERY" ||
-          linkedShipment.normalizedStatus === "UNDELIVERED" ||
-          linkedShipment.normalizedStatus === "DELIVERED"
+          linkedShipment.normalizedStatus === "UNDELIVERED"
         ) {
           if (preDeliveryStages.includes(freshOrder.internalStage)) {
             impliedStage = "DELIVERY";

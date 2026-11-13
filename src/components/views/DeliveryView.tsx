@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Truck, AlertTriangle, CheckCircle2, Clock, MapPin, FilterX } from "lucide-react";
+import { Truck, AlertTriangle, CheckCircle2, Clock, MapPin, FilterX, RefreshCw } from "lucide-react";
 import { formatDate, formatShortDate } from "@/lib/utils";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import { ColumnFilter } from "@/components/ui/ColumnFilter";
@@ -12,18 +12,53 @@ import { DateSortHeader } from "@/components/ui/DateSortHeader";
 export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?: (orderId: string) => void }> = ({ searchFilter, onNavigateToOrder }) => {
   const [filter, setFilter] = useState("");
   const [selectedShipment, setSelectedShipment] = useState<any | null>(null);
-
-  let deliveryUrl = "/api/delivery";
-  if (filter) deliveryUrl += `?filter=${filter}`;
+  const [reconciling, setReconciling] = useState(false);
+  const [reconcileMsg, setReconcileMsg] = useState<string | null>(null);
 
   const {
     data: deliveryData,
     loading,
     isBackgroundFetching,
     refetch: fetchShipments,
-  } = useCachedFetch<any>(deliveryUrl);
+  } = useCachedFetch<any>("/api/delivery");
 
-  const shipments = (deliveryData?.shipments || []) as any[];
+  const handleReconcileUnmatched = async () => {
+    if (reconciling) return;
+    setReconciling(true);
+    setReconcileMsg(null);
+    try {
+      const res = await fetch("/api/delivery", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setReconcileMsg(data.message || "Reconciliation complete.");
+        fetchShipments();
+      } else {
+        setReconcileMsg(data.error || "Failed to reconcile shipments.");
+      }
+    } catch {
+      setReconcileMsg("Request failed.");
+    } finally {
+      setReconciling(false);
+      setTimeout(() => setReconcileMsg(null), 5000);
+    }
+  };
+
+  const allShipments = (deliveryData?.shipments || []) as any[];
+
+  // Client-side quick filter according to status pill without re-fetching
+  const shipments = React.useMemo(() => {
+    if (!filter) return allShipments;
+    if (filter === "in_transit") {
+      return allShipments.filter((s) => ["PICKED_UP", "IN_TRANSIT", "OUT_FOR_DELIVERY"].includes(s.status));
+    }
+    if (filter === "exceptions") {
+      return allShipments.filter((s) => ["DELIVERY_EXCEPTION", "UNDELIVERED", "RTO"].includes(s.status));
+    }
+    if (filter === "delivered") {
+      return allShipments.filter((s) => s.status === "DELIVERED");
+    }
+    return allShipments;
+  }, [allShipments, filter]);
 
   // Table filtering and pagination hook
   const {
@@ -80,6 +115,15 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
         </div>
 
         <div className="flex items-center space-x-2">
+          <button
+            onClick={handleReconcileUnmatched}
+            disabled={reconciling}
+            title="Scan Unicommerce for unmatched AWBs and auto-import missing orders"
+            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-stone-700 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-md transition disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-stone-600 ${reconciling ? "animate-spin" : ""}`} />
+            <span>{reconciling ? "Syncing Unicommerce..." : "Sync Unlinked AWBs"}</span>
+          </button>
           {hasActiveFilters && (
             <button
               onClick={clearAllFilters}
@@ -123,6 +167,13 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
           </button>
         </div>
       </div>
+
+      {reconcileMsg && (
+        <div className="p-3 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-lg text-xs flex items-center space-x-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{reconcileMsg}</span>
+        </div>
+      )}
 
       <div className="bg-white rounded-lg border border-stone-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
@@ -234,12 +285,23 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
                       <td className="py-2.5 px-4 font-mono font-medium text-stone-900">{s.awb}</td>
                       <td className="py-2.5 px-4 font-medium text-stone-700">{s.courier}</td>
                       <td className="py-2.5 px-4 font-mono text-stone-600">
-                      <span
-                        className={s.orderId ? "cursor-pointer hover:text-[#a27b5c] hover:underline" : ""}
-                        onClick={() => s.orderId && onNavigateToOrder?.(s.orderId)}
-                        title={s.orderId ? "Click to view in All Orders" : undefined}
-                      >{s.orderCode}</span>
-                    </td>
+                        {s.orderId ? (
+                          <span
+                            className="cursor-pointer font-semibold text-[#a27b5c] hover:underline inline-flex items-center gap-1"
+                            onClick={() => onNavigateToOrder?.(s.orderId)}
+                            title="Click to inspect order"
+                          >
+                            <span>{s.orderCode}</span>
+                            {s.displayOrderCode && (
+                              <span className="text-[10px] text-stone-400 font-normal">({s.displayOrderCode})</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-stone-100 text-stone-600 border border-stone-200">
+                            {s.orderCode && s.orderCode !== "Unmatched" ? s.orderCode : "Awaiting Order Link"}
+                          </span>
+                        )}
+                      </td>
                       <td className="py-2.5 px-4">
                         <span
                           className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
