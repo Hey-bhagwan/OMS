@@ -11,7 +11,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { status, activity, location, remark } = await req.json();
+    const { status, activity, location, remark, awbWaybill, courierName } = await req.json();
 
     const shipment = await prisma.shipment.findUnique({
       where: { id: params.id },
@@ -32,12 +32,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     const now = new Date();
     const updatedStatus = targetStatus || shipment.normalizedStatus;
+    const finalAwb = (awbWaybill && typeof awbWaybill === "string" && awbWaybill.trim()) ? awbWaybill.trim() : shipment.awbWaybill;
+    const finalCourier = (courierName && typeof courierName === "string" && courierName.trim()) ? courierName.trim() : shipment.courierName;
 
     const updatedShipment = await prisma.shipment.update({
       where: { id: params.id },
       data: {
+        awbWaybill: finalAwb,
+        courierName: finalCourier,
         normalizedStatus: updatedStatus,
-        currentScanActivity: activity || shipment.currentScanActivity,
+        currentScanActivity: activity || (finalAwb !== shipment.awbWaybill || finalCourier !== shipment.courierName ? `Updated to ${finalCourier} (AWB: ${finalAwb})` : shipment.currentScanActivity),
         currentScanLocation: location || shipment.currentScanLocation,
         deliveredAt: updatedStatus === "DELIVERED" ? now : shipment.deliveredAt,
       },
@@ -58,6 +62,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     // Update matched Order if relevant
     if (shipment.orderId) {
+      if (finalAwb !== shipment.awbWaybill || finalCourier !== shipment.courierName) {
+        await prisma.order.update({
+          where: { id: shipment.orderId },
+          data: {
+            nextAction: `In transit via ${finalCourier} (AWB: ${finalAwb})`,
+          },
+        });
+      }
+
       if (updatedStatus === "DELIVERED") {
         await prisma.order.update({
           where: { id: shipment.orderId },

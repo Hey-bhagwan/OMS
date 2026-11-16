@@ -49,8 +49,9 @@ function getValidForwardStages(currentStage: string): { stage: string; label: st
         { stage: "CANCELLED", label: "Cancel Order", color: "bg-red-50 hover:bg-red-100 text-red-700" },
       ];
     case "DISPATCH":
+      // NOTE: DISPATCH → DELIVERY requires AWB entry — handled exclusively via
+      // the Order Inspect Drawer's handover modal. Do not add a shortcut here.
       return [
-        { stage: "DELIVERY", label: "Carrier Handover ➔ Move to Delivery", color: "bg-teal-600 hover:bg-teal-700 text-white" },
         { stage: "ON_HOLD", label: "Place On Hold", color: "bg-yellow-100 hover:bg-yellow-200 text-yellow-900" },
         { stage: "CANCELLED", label: "Cancel Order", color: "bg-red-50 hover:bg-red-100 text-red-700" },
       ];

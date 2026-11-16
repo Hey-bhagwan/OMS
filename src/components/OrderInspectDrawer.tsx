@@ -42,10 +42,22 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
   const [rmRemark, setRmRemark] = React.useState("");
   const [rmSubmitting, setRmSubmitting] = React.useState(false);
 
+  // Handover modal state
+  const [showHandoverModal, setShowHandoverModal] = React.useState(false);
+  const [handoverCourier, setHandoverCourier] = React.useState("Blue Dart");
+  const [customHandoverCourier, setCustomHandoverCourier] = React.useState("");
+  const [handoverAwb, setHandoverAwb] = React.useState("");
+  const [handoverRemark, setHandoverRemark] = React.useState("");
+  const [handoverSubmitting, setHandoverSubmitting] = React.useState(false);
+
   if (!orderId && !order) return null;
 
   const handleStageTransition = async (targetStage: string) => {
     if (!order) return;
+    if (targetStage === "DELIVERY" && order.internalStage === "DISPATCH") {
+      setShowHandoverModal(true);
+      return;
+    }
     setIsTransitioning(true);
     try {
       const res = await fetch(`/api/orders/${order.id}/transition`, {
@@ -68,6 +80,47 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
     } finally {
       setIsTransitioning(false);
       setTimeout(() => setTransitionMsg(null), 4000);
+    }
+  };
+
+  const handleHandoverSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!order) return;
+    const finalCourier = handoverCourier === "OTHER" ? customHandoverCourier.trim() : handoverCourier;
+    if (!handoverAwb.trim() || !finalCourier) {
+      setTransitionMsg("Courier and AWB number are required to record handover.");
+      return;
+    }
+
+    setHandoverSubmitting(true);
+    try {
+      const res = await fetch("/api/dispatch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId: order.id,
+          courierName: finalCourier,
+          awbWaybill: handoverAwb.trim(),
+          provider: "SHIPROCKET",
+          remark: handoverRemark.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTransitionMsg(`Handover recorded with ${finalCourier} (AWB: ${handoverAwb.trim()})`);
+        setShowHandoverModal(false);
+        setHandoverAwb("");
+        setCustomHandoverCourier("");
+        setHandoverRemark("");
+        onRefresh?.();
+      } else {
+        setTransitionMsg(data.error || "Failed to record handover");
+      }
+    } catch {
+      setTransitionMsg("Handover request failed");
+    } finally {
+      setHandoverSubmitting(false);
+      setTimeout(() => setTransitionMsg(null), 5000);
     }
   };
 
@@ -601,6 +654,111 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
           )}
         </div>
       </div>
+
+      {/* Handover & AWB Modal from Inspector */}
+      {showHandoverModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/50 backdrop-blur-xs no-print">
+          <form
+            onSubmit={handleHandoverSubmit}
+            className="w-full max-w-md bg-white p-6 rounded-lg shadow-2xl border border-stone-200 space-y-4 animate-in fade-in zoom-in-95 duration-150"
+          >
+            <div className="flex items-center justify-between border-b border-stone-100 pb-2">
+              <h3 className="text-sm font-bold text-stone-900">
+                Record Courier Handover: {order?.uniwareOrderCode}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowHandoverModal(false)}
+                className="text-stone-400 hover:text-stone-600 font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-stone-500">
+              To move this parcel to Delivery, please assign the shipping company and tracking AWB.
+            </p>
+
+            <div>
+              <label className="text-xs font-semibold text-stone-700 block mb-1">Shipping Partner</label>
+              <select
+                value={handoverCourier}
+                onChange={(e) => setHandoverCourier(e.target.value)}
+                className="w-full px-3 py-1.5 text-xs border border-stone-300 rounded focus:ring-1 focus:ring-[#a27b5c]"
+              >
+                <option value="Blue Dart">Blue Dart</option>
+                <option value="Delhivery">Delhivery</option>
+                <option value="Shiprocket Cargo">Shiprocket Cargo</option>
+                <option value="DTDC">DTDC</option>
+                <option value="Ekart Logistics">Ekart Logistics</option>
+                <option value="Amazon Shipping">Amazon Shipping</option>
+                <option value="Shadowfax">Shadowfax</option>
+                <option value="Xpressbees">Xpressbees</option>
+                <option value="DHL Express (Export)">DHL Express (Export)</option>
+                <option value="FedEx">FedEx</option>
+                <option value="OTHER">+ Other / Custom Shipping Partner...</option>
+              </select>
+            </div>
+
+            {handoverCourier === "OTHER" && (
+              <div>
+                <label className="text-xs font-semibold text-stone-700 block mb-1">
+                  Custom Shipping Company Name <span className="text-rose-600">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={customHandoverCourier}
+                  onChange={(e) => setCustomHandoverCourier(e.target.value)}
+                  placeholder="Enter shipping company (e.g. TCI Freight, V-Trans, GATI...)"
+                  className="w-full px-3 py-1.5 text-xs border border-amber-300 bg-amber-50/30 rounded focus:ring-1 focus:ring-[#a27b5c]"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-semibold text-stone-700 block mb-1">
+                AWB / Waybill Number <span className="text-rose-600">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={handoverAwb}
+                onChange={(e) => setHandoverAwb(e.target.value)}
+                placeholder="e.g. BD987123498"
+                className="w-full px-3 py-1.5 text-xs border border-stone-300 rounded focus:ring-1 focus:ring-[#a27b5c] font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-stone-700 block mb-1">Handover Remark (Optional)</label>
+              <textarea
+                rows={2}
+                value={handoverRemark}
+                onChange={(e) => setHandoverRemark(e.target.value)}
+                placeholder="E.g. Handed over to driver Mr. Ramesh at warehouse dock..."
+                className="w-full px-3 py-1.5 text-xs border border-stone-300 rounded focus:ring-1 focus:ring-[#a27b5c]"
+              />
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => setShowHandoverModal(false)}
+                className="px-3 py-1.5 text-xs text-stone-600 hover:bg-stone-100 rounded"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={handoverSubmitting}
+                className="px-4 py-1.5 text-xs font-semibold bg-[#a27b5c] text-white hover:bg-[#8a6549] rounded transition"
+              >
+                {handoverSubmitting ? "Recording..." : "Confirm Handover & Move to Delivery"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Truck, AlertTriangle, CheckCircle2, Clock, MapPin, FilterX, RefreshCw } from "lucide-react";
+import { Truck, AlertTriangle, CheckCircle2, Clock, MapPin, FilterX, RefreshCw, Edit3 } from "lucide-react";
 import { formatDate, formatShortDate } from "@/lib/utils";
 import { useCachedFetch } from "@/lib/useCachedFetch";
 import { ColumnFilter } from "@/components/ui/ColumnFilter";
@@ -16,6 +16,14 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
   const [reconcileMsg, setReconcileMsg] = useState<string | null>(null);
   const [checkingShipmentId, setCheckingShipmentId] = useState<string | null>(null);
   const [checkingAll, setCheckingAll] = useState(false);
+
+  // Edit Courier / AWB Modal state
+  const [editingShipment, setEditingShipment] = useState<any | null>(null);
+  const [editCourier, setEditCourier] = useState("Blue Dart");
+  const [editCustomCourier, setEditCustomCourier] = useState("");
+  const [editAwb, setEditAwb] = useState("");
+  const [editRemark, setEditRemark] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const {
     data: deliveryData,
@@ -89,6 +97,67 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
     } finally {
       setReconciling(false);
       setTimeout(() => setReconcileMsg(null), 5000);
+    }
+  };
+
+  const handleOpenEdit = (shipment: any) => {
+    setEditingShipment(shipment);
+    setEditAwb(shipment.awb || "");
+    const standardCouriers = [
+      "Blue Dart",
+      "Delhivery",
+      "Shiprocket Cargo",
+      "DTDC",
+      "Ekart Logistics",
+      "Amazon Shipping",
+      "Shadowfax",
+      "Xpressbees",
+      "DHL Express (Export)",
+      "FedEx",
+    ];
+    if (standardCouriers.includes(shipment.courier)) {
+      setEditCourier(shipment.courier);
+      setEditCustomCourier("");
+    } else {
+      setEditCourier("OTHER");
+      setEditCustomCourier(shipment.courier || "");
+    }
+    setEditRemark("");
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingShipment) return;
+    const finalCourier = editCourier === "OTHER" ? editCustomCourier.trim() : editCourier;
+    if (!editAwb.trim() || !finalCourier) {
+      setReconcileMsg("Courier and AWB number cannot be empty.");
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const res = await fetch(`/api/delivery/${editingShipment.id}/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          awbWaybill: editAwb.trim(),
+          courierName: finalCourier,
+          remark: editRemark.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setReconcileMsg(`Shipment updated: ${finalCourier} (AWB: ${editAwb.trim()})`);
+        setEditingShipment(null);
+        fetchShipments();
+      } else {
+        setReconcileMsg(data.error || "Failed to update shipment.");
+      }
+    } catch {
+      setReconcileMsg("Failed to send update request.");
+    } finally {
+      setSavingEdit(false);
+      setTimeout(() => setReconcileMsg(null), 6000);
     }
   };
 
@@ -406,10 +475,20 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
                           )}
                           <button
                             onClick={() => setSelectedShipment(s)}
-                            className="px-2 py-1 text-[11px] font-medium bg-stone-100 hover:bg-stone-200 text-stone-800 rounded"
+                            className="px-2 py-1 text-[11px] font-medium bg-stone-100 hover:bg-stone-200 text-stone-800 rounded transition"
                           >
                             Events
                           </button>
+                          {!isDelivered && (
+                            <button
+                              onClick={() => handleOpenEdit(s)}
+                              title="Edit Courier or AWB number"
+                              className="px-2 py-1 text-[11px] font-medium bg-stone-100 hover:bg-stone-200 text-stone-700 hover:text-stone-900 rounded flex items-center space-x-1 transition"
+                            >
+                              <Edit3 className="w-3 h-3 text-stone-500" />
+                              <span>Edit</span>
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -480,6 +559,113 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Edit Courier / AWB Modal */}
+      {editingShipment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs no-print">
+          <form
+            onSubmit={handleSaveEdit}
+            className="w-full max-w-md bg-white p-6 rounded-lg shadow-xl border border-stone-200 space-y-4 animate-in fade-in zoom-in-95 duration-150"
+          >
+            <div className="flex justify-between items-start border-b border-stone-200 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-stone-900">
+                  Update Courier &amp; AWB Number
+                </h3>
+                <span className="text-xs text-stone-500">
+                  Order: {editingShipment.orderCode}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingShipment(null)}
+                className="text-stone-400 hover:text-stone-700 text-sm font-semibold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-stone-700 block mb-1">Shipping Partner</label>
+              <select
+                value={editCourier}
+                onChange={(e) => setEditCourier(e.target.value)}
+                className="w-full px-3 py-1.5 text-xs border border-stone-300 rounded focus:ring-1 focus:ring-[#a27b5c]"
+              >
+                <option value="Blue Dart">Blue Dart</option>
+                <option value="Delhivery">Delhivery</option>
+                <option value="Shiprocket Cargo">Shiprocket Cargo</option>
+                <option value="DTDC">DTDC</option>
+                <option value="Ekart Logistics">Ekart Logistics</option>
+                <option value="Amazon Shipping">Amazon Shipping</option>
+                <option value="Shadowfax">Shadowfax</option>
+                <option value="Xpressbees">Xpressbees</option>
+                <option value="DHL Express (Export)">DHL Express (Export)</option>
+                <option value="FedEx">FedEx</option>
+                <option value="OTHER">+ Other / Custom Shipping Partner...</option>
+              </select>
+            </div>
+
+            {editCourier === "OTHER" && (
+              <div>
+                <label className="text-xs font-semibold text-stone-700 block mb-1">
+                  Custom Shipping Company Name <span className="text-rose-600">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editCustomCourier}
+                  onChange={(e) => setEditCustomCourier(e.target.value)}
+                  placeholder="Enter shipping company (e.g. TCI Freight, V-Trans, GATI...)"
+                  className="w-full px-3 py-1.5 text-xs border border-amber-300 bg-amber-50/30 rounded focus:ring-1 focus:ring-[#a27b5c]"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-semibold text-stone-700 block mb-1">
+                AWB / Tracking Number <span className="text-rose-600">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={editAwb}
+                onChange={(e) => setEditAwb(e.target.value)}
+                placeholder="e.g. BD987123498"
+                className="w-full px-3 py-1.5 text-xs border border-stone-300 rounded focus:ring-1 focus:ring-[#a27b5c] font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-stone-700 block mb-1">Update Reason / Remark (Optional)</label>
+              <textarea
+                rows={2}
+                value={editRemark}
+                onChange={(e) => setEditRemark(e.target.value)}
+                placeholder="e.g. Corrected AWB after re-manifesting parcel..."
+                className="w-full px-3 py-1.5 text-xs border border-stone-300 rounded focus:ring-1 focus:ring-[#a27b5c]"
+              />
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2 border-t border-stone-200">
+              <button
+                type="button"
+                onClick={() => setEditingShipment(null)}
+                className="px-3 py-1.5 text-xs text-stone-600 hover:bg-stone-100 rounded"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingEdit}
+                className="px-4 py-1.5 text-xs font-semibold bg-[#a27b5c] text-white hover:bg-[#8a6549] rounded transition"
+              >
+                {savingEdit ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

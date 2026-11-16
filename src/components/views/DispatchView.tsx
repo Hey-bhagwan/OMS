@@ -13,6 +13,7 @@ import { DateSortHeader } from "@/components/ui/DateSortHeader";
 export const DispatchView: React.FC<{ searchFilter?: string; onNavigateToOrder?: (orderId: string) => void }> = ({ searchFilter, onNavigateToOrder }) => {
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [courierName, setCourierName] = useState("Blue Dart");
+  const [customCourierName, setCustomCourierName] = useState("");
   const [awbWaybill, setAwbWaybill] = useState("");
   const [dispatchRemark, setDispatchRemark] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -74,7 +75,8 @@ export const DispatchView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
 
   const handleRecordDispatch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedOrder || !awbWaybill) return;
+    const finalCourier = courierName === "OTHER" ? customCourierName.trim() : courierName;
+    if (!selectedOrder || !awbWaybill || !finalCourier) return;
     setSubmitting(true);
     try {
       const res = await fetch("/api/dispatch", {
@@ -82,17 +84,18 @@ export const DispatchView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderId: selectedOrder.id,
-          courierName,
-          awbWaybill,
+          courierName: finalCourier,
+          awbWaybill: awbWaybill.trim(),
           provider: "SHIPROCKET",
           remark: dispatchRemark || undefined,
         }),
       });
       const data = await res.json();
       if (data.success) {
-        setFeedback(`Dispatch confirmed: Order ${selectedOrder.orderCode} handed over to ${courierName}`);
+        setFeedback(`Dispatch confirmed: Order ${selectedOrder.orderCode} handed over to ${finalCourier}`);
         setSelectedOrder(null);
         setAwbWaybill("");
+        setCustomCourierName("");
         setDispatchRemark("");
         fetchOrders();
       } else {
@@ -353,7 +356,7 @@ export const DispatchView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
             </p>
 
             <div>
-              <label className="text-xs font-semibold text-stone-700 block mb-1">Courier Partner</label>
+              <label className="text-xs font-semibold text-stone-700 block mb-1">Courier / Shipping Partner</label>
               <select
                 value={courierName}
                 onChange={(e) => setCourierName(e.target.value)}
@@ -363,9 +366,31 @@ export const DispatchView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
                 <option value="Delhivery">Delhivery</option>
                 <option value="Shiprocket Cargo">Shiprocket Cargo</option>
                 <option value="DTDC">DTDC</option>
+                <option value="Ekart Logistics">Ekart Logistics</option>
+                <option value="Amazon Shipping">Amazon Shipping</option>
+                <option value="Shadowfax">Shadowfax</option>
+                <option value="Xpressbees">Xpressbees</option>
                 <option value="DHL Express (Export)">DHL Express (Export)</option>
+                <option value="FedEx">FedEx</option>
+                <option value="OTHER">+ Other / Custom Shipping Partner...</option>
               </select>
             </div>
+
+            {courierName === "OTHER" && (
+              <div>
+                <label className="text-xs font-semibold text-stone-700 block mb-1">
+                  Custom Shipping Company Name <span className="text-rose-600">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={customCourierName}
+                  onChange={(e) => setCustomCourierName(e.target.value)}
+                  placeholder="Enter shipping company (e.g. TCI Freight, V-Trans, GATI...)"
+                  className="w-full px-3 py-1.5 text-xs border border-amber-300 bg-amber-50/30 rounded focus:ring-1 focus:ring-[#a27b5c]"
+                />
+              </div>
+            )}
 
             <div>
               <label className="text-xs font-semibold text-stone-700 block mb-1">AWB / Waybill Number</label>

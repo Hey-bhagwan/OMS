@@ -78,6 +78,10 @@ export function getPriorityExplanation(props: {
   blockerReason?: string | null;
   internalStage?: string;
 }): string {
+  if (props.internalStage === "CANCELLED") {
+    return "Order has been cancelled. No further action required.";
+  }
+
   if (props.priorityReason) return props.priorityReason;
 
   if (props.internalStage === "DELIVERED") {
@@ -142,9 +146,11 @@ export const PriorityOrderCode: React.FC<PriorityBadgeProps> = ({
   className = "",
 }) => {
   const [showTooltip, setShowTooltip] = useState(false);
-  const colors = getPriorityColorClasses(priorityLabel);
+  // Force LOW styling for cancelled orders regardless of DB value
+  const effectiveLabel = internalStage === "CANCELLED" ? "LOW" : priorityLabel;
+  const colors = getPriorityColorClasses(effectiveLabel);
   const explanation = getPriorityExplanation({
-    priorityLabel,
+    priorityLabel: effectiveLabel,
     priorityReason,
     priorityScore,
     fulfillmentDeadline,
@@ -185,7 +191,7 @@ export const PriorityOrderCode: React.FC<PriorityBadgeProps> = ({
             <div className="flex items-center gap-1.5 font-semibold">
               <span className={`w-2 h-2 rounded-full ${colors.dot}`} />
               <span className="uppercase text-[10px] tracking-wide text-stone-300">
-                Priority: {priorityLabel}
+                Priority: {effectiveLabel}
               </span>
             </div>
             {priorityScore !== null && priorityScore !== undefined && (
