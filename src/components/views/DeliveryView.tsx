@@ -14,6 +14,8 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
   const [selectedShipment, setSelectedShipment] = useState<any | null>(null);
   const [reconciling, setReconciling] = useState(false);
   const [reconcileMsg, setReconcileMsg] = useState<string | null>(null);
+  const [checkingShipmentId, setCheckingShipmentId] = useState<string | null>(null);
+  const [checkingAll, setCheckingAll] = useState(false);
 
   const {
     data: deliveryData,
@@ -21,6 +23,53 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
     isBackgroundFetching,
     refetch: fetchShipments,
   } = useCachedFetch<any>("/api/delivery");
+
+  const handleCheckStatus = async (shipmentId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (checkingShipmentId) return;
+    setCheckingShipmentId(shipmentId);
+    setReconcileMsg(null);
+    try {
+      const res = await fetch(`/api/delivery/${shipmentId}/check-status`, { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        const r = data.result;
+        const msg = r.statusChanged
+          ? `Status updated: ${r.previousStatus} ➔ ${r.newStatus} (${r.courierName || "Carrier"})`
+          : `Verified with carrier: Current status is ${r.newStatus}`;
+        setReconcileMsg(msg);
+        fetchShipments();
+      } else {
+        setReconcileMsg(data.error || "Failed to check status.");
+      }
+    } catch {
+      setReconcileMsg("Carrier check request failed.");
+    } finally {
+      setCheckingShipmentId(null);
+      setTimeout(() => setReconcileMsg(null), 6000);
+    }
+  };
+
+  const handleCheckAllNonDelivered = async () => {
+    if (checkingAll) return;
+    setCheckingAll(true);
+    setReconcileMsg(null);
+    try {
+      const res = await fetch("/api/delivery/check-status?limit=50", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setReconcileMsg(data.message || `Checked ${data.checkedCount} shipments.`);
+        fetchShipments();
+      } else {
+        setReconcileMsg(data.error || "Failed to check non-delivered shipments.");
+      }
+    } catch {
+      setReconcileMsg("Bulk status check failed.");
+    } finally {
+      setCheckingAll(false);
+      setTimeout(() => setReconcileMsg(null), 7000);
+    }
+  };
 
   const handleReconcileUnmatched = async () => {
     if (reconciling) return;
@@ -44,6 +93,9 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
   };
 
   const allShipments = (deliveryData?.shipments || []) as any[];
+  const nonDeliveredCount = React.useMemo(() => {
+    return allShipments.filter((s) => s.status !== "DELIVERED" && s.status !== "RETURNED").length;
+  }, [allShipments]);
 
   // Client-side quick filter according to status pill without re-fetching
   const shipments = React.useMemo(() => {
@@ -116,13 +168,22 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
 
         <div className="flex items-center space-x-2">
           <button
+            onClick={handleCheckAllNonDelivered}
+            disabled={checkingAll || nonDeliveredCount === 0}
+            title="Query carrier directly for real-time status of all non-delivered orders"
+            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-md transition shadow-xs disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-white ${checkingAll ? "animate-spin" : ""}`} />
+            <span>{checkingAll ? "Checking Carrier..." : `Check Live Status (${nonDeliveredCount} Active)`}</span>
+          </button>
+          <button
             onClick={handleReconcileUnmatched}
             disabled={reconciling}
             title="Scan Unicommerce for unmatched AWBs and auto-import missing orders"
             className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-stone-700 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-md transition disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-stone-600 ${reconciling ? "animate-spin" : ""}`} />
-            <span>{reconciling ? "Syncing Unicommerce..." : "Sync Unlinked AWBs"}</span>
+            <span>{reconciling ? "Syncing..." : "Sync Unlinked AWBs"}</span>
           </button>
           {hasActiveFilters && (
             <button
@@ -322,12 +383,33 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
                       <td className="py-2.5 px-4 text-stone-600 max-w-xs truncate">{s.lastActivity}</td>
                       <td className="py-2.5 px-4 text-stone-600">{formatShortDate(s.etd)}</td>
                       <td className="py-2.5 px-4 text-right">
-                        <button
-                          onClick={() => setSelectedShipment(s)}
-                          className="px-2 py-1 text-[11px] font-medium bg-stone-100 hover:bg-stone-200 text-stone-800 rounded"
-                        >
-                          View Events
-                        </button>
+                        <div className="flex items-center justify-end space-x-1.5">
+                          {!isDelivered ? (
+                            <button
+                              onClick={(e) => handleCheckStatus(s.id, e)}
+                              disabled={checkingShipmentId === s.id}
+                              title="Fetch real-time delivery status directly from the carrier"
+                              className="px-2 py-1 text-[11px] font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded flex items-center space-x-1 transition disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed"
+                            >
+                              <RefreshCw
+                                className={`w-3 h-3 text-blue-600 ${
+                                  checkingShipmentId === s.id ? "animate-spin" : ""
+                                }`}
+                              />
+                              <span>{checkingShipmentId === s.id ? "Checking..." : "Check Status"}</span>
+                            </button>
+                          ) : (
+                            <span className="px-2 py-0.5 text-[10px] font-medium text-emerald-700 bg-emerald-50 rounded border border-emerald-200">
+                              Delivered ✓
+                            </span>
+                          )}
+                          <button
+                            onClick={() => setSelectedShipment(s)}
+                            className="px-2 py-1 text-[11px] font-medium bg-stone-100 hover:bg-stone-200 text-stone-800 rounded"
+                          >
+                            Events
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
