@@ -111,7 +111,7 @@ export async function GET() {
     let deliveryExceptionsCount = 0;
 
     for (const o of allOrders) {
-      if (o.stage !== "DELIVERY") {
+      if (o.stage !== "DELIVERY" && o.stage !== "DELIVERED") {
         totalActiveOrders++;
       }
       if (o.created && new Date(o.created) >= todayStart) {
@@ -131,7 +131,9 @@ export async function GET() {
         o.deadline &&
         new Date(o.deadline) < now &&
         o.stage !== "DELIVERY" &&
-        o.stage !== "CANCELLED"
+        o.stage !== "DELIVERED" &&
+        o.stage !== "CANCELLED" &&
+        o.stage !== "RETURNED"
       ) {
         delayedOrdersCount++;
       }

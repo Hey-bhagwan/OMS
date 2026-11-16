@@ -25,8 +25,8 @@ export async function GET(req: NextRequest) {
     if (stage) {
       where.internalStage = stage;
     } else if (scope === "active") {
-      // Active factory fulfillment pipeline: exclude terminal states
-      where.internalStage = { notIn: ["CANCELLED", "RETURNED"] };
+      // Active factory fulfillment pipeline: exclude terminal states (cancelled, returned, delivered)
+      where.internalStage = { notIn: ["CANCELLED", "RETURNED", "DELIVERED"] };
     }
 
     if (channel) {
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
 
     if (isOverdue) {
       where.fulfillmentDeadline = { lt: new Date() };
-      where.internalStage = { not: "DELIVERY" };
+      where.internalStage = { notIn: ["DELIVERY", "DELIVERED", "CANCELLED", "RETURNED"] };
     }
 
     if (search) {

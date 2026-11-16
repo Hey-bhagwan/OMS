@@ -93,8 +93,9 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
   };
 
   const allShipments = (deliveryData?.shipments || []) as any[];
+  // Count only non-delivered shipments that belong to actual orders
   const nonDeliveredCount = React.useMemo(() => {
-    return allShipments.filter((s) => s.status !== "DELIVERED" && s.status !== "RETURNED").length;
+    return allShipments.filter((s) => s.orderId && s.status !== "DELIVERED" && s.status !== "RETURNED").length;
   }, [allShipments]);
 
   // Client-side quick filter according to status pill without re-fetching
