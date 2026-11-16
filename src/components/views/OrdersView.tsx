@@ -104,13 +104,13 @@ export const OrdersView: React.FC<{
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
   const [activeHighlight, setActiveHighlight] = useState<string | null>(null);
 
-  // Fetch active pipeline orders (up to 5000) so stage tabs & channels filter client-side with 0ms lag
+  // Fetch all orders (up to 5000) so stage tabs & channels filter client-side with 0ms lag
   const {
     data: ordersData,
     loading,
     isBackgroundFetching,
     refetch: fetchOrders,
-  } = useCachedFetch<any>("/api/orders?limit=5000&scope=active");
+  } = useCachedFetch<any>("/api/orders?limit=5000&scope=all");
 
   const allOrders = (ordersData?.orders || []) as any[];
 
@@ -373,8 +373,8 @@ export const OrdersView: React.FC<{
       )}
 
       {/* Stage & Channel Filter Pills */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-lg border border-stone-200 shadow-sm text-xs no-print">
-        <div className="flex items-center space-x-1 overflow-x-auto pb-1 max-w-2xl">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-lg border border-stone-200 shadow-sm text-xs no-print">
+        <div className="flex items-center space-x-1 overflow-x-auto pb-1.5 sm:pb-0 max-w-full sm:max-w-3xl scrollbar-thin">
           {[
             { id: "", label: "All Orders" },
             { id: "RAW_MATERIAL", label: "Raw Material" },
@@ -383,12 +383,13 @@ export const OrdersView: React.FC<{
             { id: "DISPATCH", label: "Dispatch" },
             { id: "DELIVERY", label: "Delivery" },
             { id: "DELIVERED", label: "Delivered" },
+            { id: "CANCELLED", label: "Cancelled" },
             { id: "ON_HOLD", label: "On Hold" },
           ].map((st) => (
             <button
               key={st.id}
               onClick={() => setStageFilter(st.id)}
-              className={`px-2.5 py-1 rounded-md font-medium whitespace-nowrap transition ${
+              className={`px-2.5 py-1 rounded-md font-medium whitespace-nowrap shrink-0 transition ${
                 stageFilter === st.id ? "bg-[#a27b5c] text-white" : "bg-stone-100 text-stone-600 hover:bg-stone-200"
               }`}
             >
@@ -397,7 +398,7 @@ export const OrdersView: React.FC<{
           ))}
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 shrink-0 self-end sm:self-auto">
           {hasActiveFilters && (
             <button
               onClick={clearAllFilters}

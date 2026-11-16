@@ -23,6 +23,7 @@ import { invalidateCache } from "@/lib/useCachedFetch";
 export default function Home() {
   const [activeTab, setActiveTab] = useState<NavTab>("dashboard");
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [user, setUser] = useState<any>(null);
@@ -268,6 +269,8 @@ export default function Home() {
         onToggleCollapse={() => setCollapsed(!collapsed)}
         onLogout={handleLogout}
         userRole={user.role}
+        mobileOpen={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
       />
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -280,9 +283,10 @@ export default function Home() {
           }}
           userName={user.name}
           userRole={user.role}
+          onOpenMobileMenu={() => setMobileMenuOpen(true)}
         />
 
-        <main className="flex-1 p-6 overflow-y-auto">
+        <main className="flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto">
           {renderActiveView()}
         </main>
       </div>

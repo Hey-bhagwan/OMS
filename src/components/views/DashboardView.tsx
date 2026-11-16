@@ -110,7 +110,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToTab, o
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 2xl:grid-cols-12 gap-2.5 sm:gap-3">
           {kpiCards.map((c, i) => {
             const Icon = c.icon;
             return (

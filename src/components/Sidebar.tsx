@@ -48,6 +48,8 @@ interface SidebarProps {
   onToggleCollapse: () => void;
   onLogout: () => void;
   userRole?: string;
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -57,6 +59,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleCollapse,
   onLogout,
   userRole,
+  mobileOpen = false,
+  onCloseMobile,
 }) => {
   const menuItems: { id: NavTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -78,76 +82,100 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <aside
-      className={`bg-[#2c2018] text-stone-200 transition-all duration-300 flex flex-col border-r border-[#3d2d23] ${
-        collapsed ? "w-16" : "w-64"
-      } no-print select-none h-screen sticky top-0`}
-    >
-      {/* Brand Header */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-[#3d2d23]">
-        {!collapsed ? (
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded bg-[#a27b5c] text-white flex items-center justify-center font-serif font-bold text-lg">
+    <>
+      {/* Mobile Backdrop overlay */}
+      {mobileOpen && (
+        <div
+          onClick={onCloseMobile}
+          className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-xs transition-opacity"
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`bg-[#2c2018] text-stone-200 transition-all duration-300 flex flex-col border-r border-[#3d2d23] no-print select-none h-screen 
+          fixed inset-y-0 left-0 z-50 md:sticky md:top-0
+          ${mobileOpen ? "translate-x-0 w-64 shadow-2xl" : "-translate-x-full md:translate-x-0"}
+          ${collapsed ? "md:w-16" : "md:w-64"}
+        `}
+      >
+        {/* Brand Header */}
+        <div className="h-16 flex items-center justify-between px-4 border-b border-[#3d2d23]">
+          {!collapsed ? (
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 rounded bg-[#a27b5c] text-white flex items-center justify-center font-serif font-bold text-lg">
+                K
+              </div>
+              <div>
+                <span className="font-semibold text-stone-100 tracking-wide text-sm block">KOA LIVING</span>
+                <span className="text-[10px] text-stone-400 block tracking-wider uppercase">Order Management</span>
+              </div>
+            </div>
+          ) : (
+            <div className="w-8 h-8 mx-auto rounded bg-[#a27b5c] text-white flex items-center justify-center font-serif font-bold text-lg">
               K
             </div>
-            <div>
-              <span className="font-semibold text-stone-100 tracking-wide text-sm block">KOA LIVING</span>
-              <span className="text-[10px] text-stone-400 block tracking-wider uppercase">Order Management</span>
-            </div>
-          </div>
-        ) : (
-          <div className="w-8 h-8 mx-auto rounded bg-[#a27b5c] text-white flex items-center justify-center font-serif font-bold text-lg">
-            K
-          </div>
-        )}
-        <button
-          onClick={onToggleCollapse}
-          className="p-1.5 rounded hover:bg-[#3d2d23] text-stone-400 hover:text-white transition"
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-        </button>
-      </div>
-
-      {/* Navigation Links */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
-        {menuItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
-          return (
+          )}
+          {/* Collapse button on desktop, close button on mobile */}
+          <div className="flex items-center">
             <button
-              key={item.id}
-              onClick={() => onSelectTab(item.id)}
-              className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-medium transition ${
-                isActive
-                  ? "bg-[#a27b5c] text-white shadow-sm"
-                  : "text-stone-300 hover:bg-[#3d2d23] hover:text-white"
-              }`}
-              title={collapsed ? item.label : undefined}
+              onClick={onCloseMobile}
+              className="p-1.5 rounded hover:bg-[#3d2d23] text-stone-400 hover:text-white transition md:hidden"
+              title="Close navigation"
             >
-              <Icon className="w-4 h-4 shrink-0" />
-              {!collapsed && <span className="truncate">{item.label}</span>}
+              <ChevronLeft className="w-5 h-5" />
             </button>
-          );
-        })}
-      </nav>
+            <button
+              onClick={onToggleCollapse}
+              className="hidden md:block p-1.5 rounded hover:bg-[#3d2d23] text-stone-400 hover:text-white transition"
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
 
-      {/* Footer / User Role */}
-      <div className="p-3 border-t border-[#3d2d23] flex items-center justify-between text-xs">
-        {!collapsed && (
-          <div className="truncate">
+        {/* Navigation Links */}
+        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  onSelectTab(item.id);
+                  if (onCloseMobile) onCloseMobile();
+                }}
+                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-medium transition ${
+                  isActive
+                    ? "bg-[#a27b5c] text-white shadow-sm"
+                    : "text-stone-300 hover:bg-[#3d2d23] hover:text-white"
+                }`}
+                title={collapsed ? item.label : undefined}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className={`${collapsed ? "md:hidden" : ""} truncate`}>{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Footer / User Role */}
+        <div className="p-3 border-t border-[#3d2d23] flex items-center justify-between text-xs">
+          <div className={`${collapsed ? "md:hidden" : ""} truncate`}>
             <span className="text-[10px] text-stone-400 uppercase tracking-wider block">Access Role</span>
             <span className="font-semibold text-stone-200 block truncate">{userRole || "User"}</span>
           </div>
-        )}
-        <button
-          onClick={onLogout}
-          className="p-1.5 rounded hover:bg-[#3d2d23] text-stone-400 hover:text-red-400 transition ml-auto"
-          title="Sign Out"
-        >
-          <LogOut className="w-4 h-4" />
-        </button>
-      </div>
-    </aside>
+          <button
+            onClick={onLogout}
+            className="p-1.5 rounded hover:bg-[#3d2d23] text-stone-400 hover:text-red-400 transition ml-auto"
+            title="Sign Out"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
+      </aside>
+    </>
   );
 };

@@ -15,6 +15,7 @@ import {
   PackageCheck,
   AlertCircle,
   FileText,
+  Menu,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
@@ -24,6 +25,7 @@ interface HeaderProps {
   onRefreshData: () => void;
   userName?: string;
   userRole?: string;
+  onOpenMobileMenu?: () => void;
 }
 
 type SyncMode = "CREATED" | "UPDATED";
@@ -51,6 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
   onRefreshData,
   userName,
   userRole,
+  onOpenMobileMenu,
 }) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [showSyncOptions, setShowSyncOptions] = useState(false);
@@ -208,21 +211,35 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className="h-16 bg-white border-b border-stone-200 px-6 flex items-center justify-between sticky top-0 z-20 no-print shadow-xs">
-        {/* Global Search */}
-        <div className="flex items-center w-80 relative">
-          <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Global search by Order ID, SKU, City, AWB..."
-            className="w-full pl-9 pr-4 py-1.5 text-xs bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a27b5c] focus:bg-white transition"
-          />
+      <header className="h-16 bg-white border-b border-stone-200 px-3 sm:px-6 flex items-center justify-between sticky top-0 z-20 no-print shadow-xs gap-2">
+        {/* Mobile Menu & Global Search */}
+        <div className="flex items-center gap-2 flex-1 max-w-xs sm:max-w-sm md:max-w-md">
+          {onOpenMobileMenu && (
+            <button
+              type="button"
+              onClick={onOpenMobileMenu}
+              className="p-1.5 -ml-1 text-stone-600 hover:text-stone-900 rounded-lg hover:bg-stone-100 md:hidden shrink-0 transition"
+              title="Open Navigation Menu"
+              aria-label="Open Navigation Menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
+
+          <div className="flex items-center w-full relative">
+            <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Search Order ID, SKU, City, AWB..."
+              className="w-full pl-9 pr-3 py-1.5 text-xs bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a27b5c] focus:bg-white transition"
+            />
+          </div>
         </div>
 
         {/* Sync Status / Info */}
-        <div className="flex items-center space-x-3">
+        <div className="hidden sm:flex items-center space-x-3">
           {syncStatusMsg && (
             <div
               role="status"
@@ -268,24 +285,25 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
           {/* Sync dropdown */}
           <div className="relative">
             <button
               type="button"
               onClick={() => setShowSyncOptions((value) => !value)}
               disabled={isSyncing}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 text-xs font-medium text-stone-700 transition disabled:opacity-50"
+              className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 text-xs font-medium text-stone-700 transition disabled:opacity-50"
               title="Choose which Uniware orders to sync"
               aria-expanded={showSyncOptions}
             >
               <RefreshCw
-                className={`w-3.5 h-3.5 ${
+                className={`w-3.5 h-3.5 shrink-0 ${
                   isSyncing ? "animate-spin text-[#a27b5c]" : "text-stone-500"
                 }`}
               />
-              <span>{isSyncing ? "Syncing..." : "Sync Uniware"}</span>
-              <ChevronDown className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{isSyncing ? "Syncing..." : "Sync Uniware"}</span>
+              <span className="inline sm:hidden">{isSyncing ? "..." : "Sync"}</span>
+              <ChevronDown className="w-3.5 h-3.5 shrink-0" />
             </button>
 
             {showSyncOptions && !isSyncing && (

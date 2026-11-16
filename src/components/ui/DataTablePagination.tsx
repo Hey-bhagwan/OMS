@@ -67,7 +67,7 @@ export const DataTablePagination: React.FC<PaginationProps> = ({
   const pages = getPageNumbers();
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-white border-t border-stone-200 text-xs text-stone-600 no-print rounded-b-lg">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 bg-white border-t border-stone-200 text-xs text-stone-600 no-print rounded-b-lg">
       {/* Left: Records summary */}
       <div className="flex items-center space-x-2">
         <span className="font-medium text-stone-700">
@@ -78,10 +78,10 @@ export const DataTablePagination: React.FC<PaginationProps> = ({
       </div>
 
       {/* Center / Right: Page size selector and page navigation */}
-      <div className="flex flex-wrap items-center space-x-4">
+      <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 sm:space-x-4">
         {/* Rows per page selector */}
         <div className="flex items-center space-x-1.5">
-          <span className="text-stone-500">Rows per page:</span>
+          <span className="text-stone-500">Rows:</span>
           <select
             value={pageSize}
             onChange={(e) => onPageSizeChange(Number(e.target.value))}
@@ -89,7 +89,7 @@ export const DataTablePagination: React.FC<PaginationProps> = ({
           >
             {pageSizeOptions.map((opt) => (
               <option key={opt} value={opt}>
-                {opt} rows
+                {opt}
               </option>
             ))}
           </select>

@@ -200,9 +200,9 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/40 backdrop-blur-xs no-print animate-in fade-in duration-150">
-      <div className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 border-l border-stone-200">
+      <div className="w-full sm:max-w-2xl bg-white h-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 border-l border-stone-200">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-stone-200 flex items-center justify-between bg-stone-50">
+        <div className="px-4 sm:px-6 py-4 border-b border-stone-200 flex items-center justify-between bg-stone-50">
           <div>
             {loading ? (
               <div className="space-y-1.5">
@@ -251,7 +251,7 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
         )}
 
         {/* Content Body: Skeleton vs Loaded State */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
           {loading ? (
             /* Skeleton Loading Placeholder */
             <div className="space-y-6 animate-pulse">
@@ -351,7 +351,7 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
                       </div>
 
                       {/* Stock Allocation Breakdown */}
-                      <div className="grid grid-cols-5 gap-2 pt-2 border-t border-stone-200 text-center">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2 border-t border-stone-200 text-center">
                         <div className="p-1 bg-white rounded border border-stone-200">
                           <span className="text-[10px] text-stone-500 block">Alloc. Packed</span>
                           <span className="font-bold text-emerald-700">{line.allocatedPackedQty}</span>
