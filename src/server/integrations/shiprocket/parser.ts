@@ -47,9 +47,9 @@ export function shouldUpdateShipmentStatus(
   if (newStatus === "RTO" || newStatus === "RETURNED") {
     return true; // Legitimate return transitions are always permitted
   }
-  if (currentStatus === "DELIVERED") {
-    return false; // Do not regress from DELIVERED to in-transit or other statuses
-  }
+  // Allow status correction even if currently DELIVERED — the caller (carrier-status-check.service)
+  // guards against re-checking truly confirmed shipments (those with a deliveredAt timestamp).
+  // Webhook handler will still use precedence to block webhook regressions from DELIVERED.
   return STATUS_PRECEDENCE[newStatus] >= STATUS_PRECEDENCE[currentStatus];
 }
 

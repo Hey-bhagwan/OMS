@@ -35,8 +35,10 @@ export class CarrierStatusCheckService {
 
     const previousStatus = shipment.normalizedStatus;
 
-    // Guard: Only non-delivered shipments can be refreshed
-    if (previousStatus === "DELIVERED") {
+    // Guard: Skip truly terminal shipments that have a confirmed deliveredAt timestamp
+    // (i.e. delivery was physically confirmed by the carrier, not just inferred from Uniware status).
+    // This allows re-checking shipments that were incorrectly auto-marked DELIVERED via Uniware COMPLETE.
+    if (previousStatus === "DELIVERED" && shipment.deliveredAt) {
       return {
         shipmentId: shipment.id,
         awb: shipment.awbWaybill,
@@ -222,9 +224,16 @@ export class CarrierStatusCheckService {
     const carrierRawStatus = String(rawVal).toUpperCase();
     let normalizedStatus: NormalizedShipmentStatus = mapToNormalizedStatus(carrierRawStatus);
 
-    if (carrierRawStatus === "DELIVERED" || dto.status === "COMPLETE") {
+    // NOTE: "COMPLETE" in Uniware means order is fully processed/dispatched — NOT
+    // necessarily delivered to the customer. Only trust DELIVERED if the carrier
+    // explicitly says DELIVERED. Use DISPATCHED/SHIPPED as IN_TRANSIT.
+    if (carrierRawStatus === "DELIVERED") {
       normalizedStatus = "DELIVERED";
-    } else if (carrierRawStatus === "DISPATCHED" || carrierRawStatus === "SHIPPED") {
+    } else if (
+      carrierRawStatus === "DISPATCHED" ||
+      carrierRawStatus === "SHIPPED" ||
+      dto.status === "COMPLETE"
+    ) {
       normalizedStatus = "IN_TRANSIT";
     } else if (carrierRawStatus === "READY_TO_SHIP" || carrierRawStatus === "PACKED") {
       normalizedStatus = "READY_FOR_PICKUP";

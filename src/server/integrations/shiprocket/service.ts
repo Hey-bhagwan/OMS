@@ -175,8 +175,9 @@ export class ShipmentService {
         courierName: parsed.courierName,
         normalizedStatus: currentStatus,
         providerStatus: parsed.providerStatus,
-        currentScanLocation: parsed.scanLocation || undefined,
-        currentScanActivity: parsed.activityDescription || undefined,
+        // Always write scan activity/location when status is being updated, to avoid stale display
+        currentScanLocation: shouldUpdateStatus ? (parsed.scanLocation ?? undefined) : undefined,
+        currentScanActivity: shouldUpdateStatus ? (parsed.activityDescription ?? undefined) : undefined,
         etdDate: parsed.estimatedDeliveryDate || undefined,
         dispatchedAt: parsed.normalizedStatus === "PICKED_UP" || parsed.normalizedStatus === "IN_TRANSIT" ? new Date() : undefined,
         deliveredAt: parsed.normalizedStatus === "DELIVERED" ? new Date() : undefined,
