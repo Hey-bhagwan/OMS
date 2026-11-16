@@ -17,6 +17,16 @@ export function calculateOrderPriority(params: {
   const { fulfillmentDeadline, internalStage, blockerReason, createdAt } = params;
   const now = new Date();
 
+  // If order is cancelled, priority score is 0 and status is CANCELLED
+  if (internalStage === "CANCELLED") {
+    return {
+      score: 0,
+      label: "LOW",
+      isOverdue: false,
+      reason: "Order is cancelled; no further fulfillment action required",
+    };
+  }
+
   // If order is completed / delivered, priority is 0 (fulfilled, no further action required).
   if (internalStage === "DELIVERED") {
     return {
@@ -833,7 +843,7 @@ export class WorkflowService {
       const priority = calculateOrderPriority({
         fulfillmentDeadline: order.fulfillmentDeadline,
         internalStage: targetStage,
-        blockerReason: order.blockerReason,
+        blockerReason: targetStage === "CANCELLED" ? null : order.blockerReason,
         createdAt: order.createdAt,
       });
 
@@ -842,7 +852,13 @@ export class WorkflowService {
         data: {
           internalStage: targetStage,
           priorityScore: priority.score,
-          priorityLabel: priority.label,
+          priorityLabel: targetStage === "CANCELLED" ? "LOW" : priority.label,
+          ...(targetStage === "CANCELLED"
+            ? {
+                nextAction: "Order is cancelled. No further action required.",
+                blockerReason: null,
+              }
+            : {}),
         },
       });
 
@@ -874,8 +890,61 @@ export class WorkflowService {
             status: { not: "COMPLETED" },
           },
           data: {
-            status: "COMPLETED",
+            status: targetStage === "CANCELLED" ? "CANCELLED" : "COMPLETED",
           },
+        });
+      }
+
+      // If cancelled, release any reservations and cancel active work orders/blocks
+      if (targetStage === "CANCELLED") {
+        const orderWithLines = await tx.order.findUnique({
+          where: { id: orderId },
+          include: {
+            lines: {
+              include: {
+                reservations: { where: { status: "RESERVED" } },
+              },
+            },
+          },
+        });
+
+        if (orderWithLines) {
+          for (const line of orderWithLines.lines) {
+            for (const res of line.reservations) {
+              await tx.inventoryReservation.update({
+                where: { id: res.id },
+                data: { status: "RELEASED", releasedAt: new Date() },
+              });
+              const stock = await tx.finishedGoodsStock.findUnique({
+                where: { skuId_bucket: { skuId: res.skuId, bucket: res.bucket } },
+              });
+              if (stock) {
+                const newReserved = Math.max(0, stock.quantityReserved - res.quantity);
+                await tx.finishedGoodsStock.update({
+                  where: { id: stock.id },
+                  data: {
+                    quantityReserved: newReserved,
+                    quantityAvailable: stock.quantityOnHand - newReserved,
+                  },
+                });
+              }
+            }
+          }
+        }
+
+        // Cancel active production work orders associated with this order's lines
+        const lineIds = orderWithLines ? orderWithLines.lines.map((l) => l.id) : [];
+        if (lineIds.length > 0) {
+          await tx.productionOrder.updateMany({
+            where: { orderLineId: { in: lineIds }, status: { not: "CANCELLED" } },
+            data: { status: "CANCELLED" },
+          });
+        }
+
+        // Resolve or cancel active raw material blocks
+        await tx.rawMaterialBlock.updateMany({
+          where: { orderId, status: { in: ["BLOCKED", "PENDING_ASSESSMENT"] } },
+          data: { status: "RESOLVED", resolvedAt: new Date() },
         });
       }
 
