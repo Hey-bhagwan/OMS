@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db/prisma";
+import { getSessionUser } from "@/server/auth/session";
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status") || "BLOCKED"; // "BLOCKED", "PENDING_ASSESSMENT", "RESOLVED", "ALL"
     const channel = searchParams.get("channel") || "";

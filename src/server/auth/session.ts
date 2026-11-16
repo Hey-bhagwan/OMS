@@ -1,6 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { Role } from "@prisma/client";
+import { prisma } from "@/server/db/prisma";
 
 const SECRET_KEY = new TextEncoder().encode(
   process.env.SESSION_SECRET || "koa-living-production-super-secret-key-32-chars-min"
@@ -119,7 +120,39 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   const cookieStore = cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   if (!token) return null;
-  return await verifySessionToken(token);
+
+  const decoded = await verifySessionToken(token);
+  if (!decoded) return null;
+
+  // ✅ Verify user still exists and is active in the database.
+  // This ensures deleted or deactivated users cannot use old JWT tokens.
+  const dbUser = await prisma.user.findUnique({
+    where: { id: decoded.id },
+    select: { id: true, email: true, name: true, role: true, isActive: true },
+  });
+
+  if (!dbUser || !dbUser.isActive) return null;
+
+  return {
+    id: dbUser.id,
+    email: dbUser.email,
+    name: dbUser.name,
+    role: dbUser.role,
+  };
 }
 
 export { SESSION_COOKIE_NAME };
+
+/**
+ * Use in route handlers that need a guaranteed authenticated user.
+ * Returns the session user, or throws a Response-shaped error caught by the caller.
+ * Usage: const user = await requireAuth(); // throws NextResponse 401 if not authed
+ */
+export async function requireAuth(): Promise<SessionUser> {
+  const user = await getSessionUser();
+  if (!user) {
+    // This will be caught by the try/catch in route handlers and returned as-is
+    throw Object.assign(new Error("Unauthorized"), { status: 401 });
+  }
+  return user;
+}

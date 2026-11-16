@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/server/db/prisma";
 import { startOfDay, subDays } from "date-fns";
 import { calculateOrderPriority } from "@/server/services/workflow.service";
+import { getSessionUser } from "@/server/auth/session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const now = new Date();
     const todayStart = startOfDay(now);
 

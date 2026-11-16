@@ -5,8 +5,9 @@ import { getSessionUser, hasPermission } from "@/server/auth/session";
 export async function POST(req: Request) {
   try {
     const user = await getSessionUser();
-    if (user && !hasPermission(user.role, "settings:edit") && !hasPermission(user.role, "orders:edit")) {
-      return NextResponse.json({ error: "Unauthorized to trigger synchronization" }, { status: 403 });
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!hasPermission(user.role, "settings:edit") && !hasPermission(user.role, "orders:edit")) {
+      return NextResponse.json({ error: "Forbidden: insufficient permissions" }, { status: 403 });
     }
 
     const body = await req.json().catch(() => ({}));

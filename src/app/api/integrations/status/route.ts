@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/server/db/prisma";
+import { getSessionUser } from "@/server/auth/session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const checkpoints = await prisma.integrationCheckpoint.findMany();
     const recentSyncRuns = await prisma.integrationSyncRun.findMany({
       take: 10,

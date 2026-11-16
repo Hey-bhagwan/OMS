@@ -5,6 +5,8 @@ import { STATUS_PRECEDENCE } from "@/server/integrations/shiprocket/parser";
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const orders = await prisma.order.findMany({
       where: { internalStage: "DISPATCH" },
       orderBy: [{ priorityScore: "desc" }, { createdAt: "asc" }],

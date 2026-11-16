@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db/prisma";
+import { getSessionUser } from "@/server/auth/session";
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { searchParams } = new URL(req.url);
     const bucket = searchParams.get("bucket");
     const limit = Math.min(200, Math.max(1, parseInt(searchParams.get("limit") || "50", 10)));

@@ -6,7 +6,8 @@ import { getSessionUser, hasPermission } from "@/server/auth/session";
 export async function GET() {
   try {
     const user = await getSessionUser();
-    if (user && !hasPermission(user.role, "users:manage")) {
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!hasPermission(user.role, "users:manage")) {
       return NextResponse.json({ error: "Forbidden: insufficient permissions" }, { status: 403 });
     }
 
@@ -32,7 +33,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const user = await getSessionUser();
-    if (user && !hasPermission(user.role, "users:manage")) {
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!hasPermission(user.role, "users:manage")) {
       return NextResponse.json({ error: "Forbidden: insufficient permissions" }, { status: 403 });
     }
 

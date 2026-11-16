@@ -26,8 +26,8 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [user, setUser] = useState<any>(null);
-  const [loginEmail, setLoginEmail] = useState("admin@koaliving.com");
-  const [loginPass, setLoginPass] = useState("KoaLiving2026!");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPass, setLoginPass] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -159,11 +159,8 @@ export default function Home() {
             </button>
           </form>
 
-          <div className="pt-2 border-t border-stone-100 text-[11px] text-stone-400 space-y-1">
-            <div className="font-medium text-stone-600">Quick Test Credentials:</div>
-            <div>Admin: <span className="font-mono text-stone-700">admin@koaliving.com</span> / <span className="font-mono text-stone-700">KoaLiving2026!</span></div>
-            <div>Operations: <span className="font-mono text-stone-700">ops@koaliving.com</span> / <span className="font-mono text-stone-700">KoaLiving2026!</span></div>
-            <div>Inventory: <span className="font-mono text-stone-700">inventory@koaliving.com</span> / <span className="font-mono text-stone-700">KoaLiving2026!</span></div>
+          <div className="pt-2 border-t border-stone-100 text-[11px] text-stone-400 text-center">
+            Koa Living Operations Management System
           </div>
         </div>
       </div>

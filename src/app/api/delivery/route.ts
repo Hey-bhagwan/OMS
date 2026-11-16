@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db/prisma";
 import { shipmentService } from "@/server/integrations/shiprocket/service";
+import { getSessionUser } from "@/server/auth/session";
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const result = await shipmentService.reconcileExistingUnmatchedShipments();
     return NextResponse.json({
       success: true,

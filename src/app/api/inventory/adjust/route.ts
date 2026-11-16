@@ -5,6 +5,7 @@ import { getSessionUser } from "@/server/auth/session";
 export async function POST(req: NextRequest) {
   try {
     const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const body = await req.json();
 
     const { skuId, bucket, quantityChange, reason } = body;

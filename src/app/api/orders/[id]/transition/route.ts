@@ -6,6 +6,7 @@ import { InternalStage } from "@prisma/client";
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { targetStage, reason } = await req.json();
 
     if (!targetStage) {

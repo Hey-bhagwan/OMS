@@ -5,6 +5,7 @@ import { getSessionUser } from "@/server/auth/session";
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const { remark, stage } = await req.json();
 
     if (!remark || !remark.trim()) {
