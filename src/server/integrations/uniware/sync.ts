@@ -15,12 +15,13 @@ export interface SyncOrderSummary {
 
 export interface SyncRunResult {
   syncRunId: string;
-  status: "SUCCESS" | "FAILED";
+  status: "SUCCESS" | "FAILED" | "PARTIAL_SUCCESS";
   recordsFetched: number;
   recordsUpserted: number;
   recordsFailed: number;
   errorMessage?: string;
   ordersSummary?: SyncOrderSummary[];
+  syncedTill?: string;
 }
 
 type InternalStage =
@@ -64,6 +65,7 @@ export class UniwareSyncService {
     let recordsFetched = 0;
     let recordsUpserted = 0;
     let recordsFailed = 0;
+    let firstFailedOrderTime: Date | null = null;
     const ordersSummary: SyncOrderSummary[] = [];
 
     try {
@@ -239,6 +241,21 @@ export class UniwareSyncService {
             );
 
             recordsFailed++;
+
+            if (!firstFailedOrderTime) {
+              const rawTime =
+                (dateType === "UPDATED" ? (item?.updated || item?.created) : (item?.created || item?.updated)) ||
+                item?.displayOrderDateTime;
+              if (rawTime) {
+                const parsed = new Date(rawTime);
+                if (!Number.isNaN(parsed.getTime())) {
+                  firstFailedOrderTime = parsed;
+                }
+              }
+              if (!firstFailedOrderTime) {
+                firstFailedOrderTime = startedAt;
+              }
+            }
           }
 
           processedInBatch++;
@@ -257,18 +274,23 @@ export class UniwareSyncService {
         }
       }
 
-      const checkpointStatus: SyncStatus =
-        recordsFailed === 0 ? "SUCCESS" : "FAILED";
+      const isCompleteFailure = recordsUpserted === 0 && recordsFailed > 0;
+      const checkpointStatus: SyncStatus = isCompleteFailure ? "FAILED" : "SUCCESS";
+      const runStatus: SyncStatus = isCompleteFailure ? "FAILED" : "SUCCESS";
+      const apiResultStatus = recordsFailed === 0 ? "SUCCESS" : recordsUpserted > 0 ? "PARTIAL_SUCCESS" : "FAILED";
+
+      const effectiveSyncedTill: Date | undefined =
+        recordsFailed > 0 && firstFailedOrderTime
+          ? firstFailedOrderTime
+          : recordsUpserted > 0 || recordsFailed === 0
+          ? toDate
+          : undefined;
 
       const checkpointData = {
         lastRunAt: startedAt,
         status: checkpointStatus,
-        lastSuccessAt:
-          recordsFailed === 0 ? new Date() : undefined,
-        failureCount:
-          recordsFailed === 0
-            ? 0
-            : { increment: 1 },
+        lastSuccessAt: effectiveSyncedTill,
+        failureCount: recordsFailed === 0 ? 0 : { increment: 1 },
         lastError:
           recordsFailed === 0
             ? null
@@ -282,18 +304,17 @@ export class UniwareSyncService {
           ...checkpointData,
 
           // A CREATED sync must not advance the UPDATED checkpoint.
-          ...(dateType === "UPDATED"
-            ? { lastCheckpointValue: toDate.toISOString() }
+          ...(dateType === "UPDATED" && effectiveSyncedTill
+            ? { lastCheckpointValue: effectiveSyncedTill.toISOString() }
             : {}),
         },
 
         create: {
           provider: "UNIWARE",
-          lastCheckpointValue: toDate.toISOString(),
+          lastCheckpointValue: (effectiveSyncedTill || toDate).toISOString(),
           lastRunAt: startedAt,
-          lastSuccessAt:
-            recordsFailed === 0 ? new Date() : undefined,
-          status: recordsFailed === 0 ? "SUCCESS" : "FAILED",
+          lastSuccessAt: effectiveSyncedTill,
+          status: checkpointStatus,
           failureCount: recordsFailed,
           lastError:
             recordsFailed === 0
@@ -307,7 +328,7 @@ export class UniwareSyncService {
 
         data: {
           completedAt: new Date(),
-          status: recordsFailed === 0 ? "SUCCESS" : "FAILED",
+          status: runStatus,
           recordsFetched,
           recordsUpserted,
           recordsFailed,
@@ -322,11 +343,12 @@ export class UniwareSyncService {
 
       return {
         syncRunId: syncRun.id,
-        status: recordsFailed === 0 ? "SUCCESS" : "FAILED",
+        status: apiResultStatus,
         recordsFetched,
         recordsUpserted,
         recordsFailed,
         ordersSummary,
+        syncedTill: effectiveSyncedTill ? effectiveSyncedTill.toISOString() : undefined,
         ...(recordsFailed > 0
           ? {
               errorMessage:

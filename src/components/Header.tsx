@@ -30,7 +30,7 @@ type SyncMode = "CREATED" | "UPDATED";
 
 interface SyncResultModalData {
   syncRunId?: string;
-  status: "SUCCESS" | "FAILED";
+  status: "SUCCESS" | "FAILED" | "PARTIAL_SUCCESS";
   recordsFetched: number;
   recordsUpserted: number;
   recordsFailed: number;
@@ -149,13 +149,22 @@ export const Header: React.FC<HeaderProps> = ({
       }
 
       // Update last sync time
-      setLastSyncTime(new Date().toISOString());
+      if (data.syncedTill) {
+        setLastSyncTime(data.syncedTill);
+      } else if (data.recordsUpserted > 0 || data.status === "SUCCESS") {
+        setLastSyncTime(new Date().toISOString());
+      }
 
       if (data.status === "SUCCESS") {
         setSyncStatusMsg(
           `${mode === "CREATED" ? "Created" : "Updated"} sync completed: ${
             data.recordsUpserted ?? 0
           } orders processed`
+        );
+        onRefreshData();
+      } else if (data.status === "PARTIAL_SUCCESS") {
+        setSyncStatusMsg(
+          `Sync completed with warnings: ${data.recordsUpserted ?? 0} updated, ${data.recordsFailed ?? 0} failed`
         );
         onRefreshData();
       } else {
@@ -455,6 +464,10 @@ export const Header: React.FC<HeaderProps> = ({
                   <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700">
                     <PackageCheck className="w-4 h-4" />
                   </div>
+                ) : syncModalData.status === "PARTIAL_SUCCESS" ? (
+                  <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-700">
+                    <AlertCircle className="w-4 h-4" />
+                  </div>
                 ) : (
                   <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-700">
                     <AlertCircle className="w-4 h-4" />
@@ -464,11 +477,15 @@ export const Header: React.FC<HeaderProps> = ({
                   <h3 className="text-sm font-bold text-stone-900">
                     {syncModalData.status === "SUCCESS"
                       ? "Unicommerce Sync Completed"
+                      : syncModalData.status === "PARTIAL_SUCCESS"
+                      ? "Unicommerce Sync Completed with Warnings"
                       : "Sync Operation Failed"}
                   </h3>
                   <p className="text-[11px] text-stone-500">
                     {syncModalData.status === "SUCCESS"
                       ? `Successfully synchronized with Unicommerce`
+                      : syncModalData.status === "PARTIAL_SUCCESS"
+                      ? `${syncModalData.recordsUpserted} orders synced, ${syncModalData.recordsFailed} failed`
                       : syncModalData.errorMessage || "Error occurred during sync"}
                   </p>
                 </div>
