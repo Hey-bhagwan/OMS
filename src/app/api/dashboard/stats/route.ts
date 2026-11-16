@@ -57,9 +57,14 @@ export async function GET() {
     const shipmentCounts: any[] = statsData.shipments || [];
     const stockGroups: any[] = statsData.stock || [];
 
-    // 2. Priority orders with lean selects
+    // 2. Priority orders with lean selects — exclude terminal stages that need no action
     const latestPriorityOrders = await prisma.order.findMany({
       take: 12,
+      where: {
+        internalStage: {
+          notIn: ["CANCELLED", "DELIVERED", "RETURNED"],
+        },
+      },
       orderBy: [{ priorityScore: "desc" }, { createdAt: "asc" }],
       select: {
         id: true,

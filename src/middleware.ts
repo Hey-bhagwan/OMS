@@ -8,6 +8,8 @@ const SECRET_KEY = new TextEncoder().encode(
 const SESSION_COOKIE_NAME = "koa_session_token";
 
 // Routes that do NOT require authentication
+// Webhooks are public because they're called by external services (Shiprocket).
+// They use their own SHIPROCKET_WEBHOOK_SECRET verification instead.
 const PUBLIC_API_PATHS = [
   "/api/auth/login",
   "/api/auth/me",           // handles its own 401

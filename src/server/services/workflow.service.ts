@@ -188,6 +188,18 @@ export class WorkflowService {
             }
           }
         }
+
+        // Clear stale priority/action fields so cancelled orders never surface in dashboards
+        await tx.order.update({
+          where: { id: order.id },
+          data: {
+            priorityScore: 0,
+            priorityLabel: "CANCELLED",
+            nextAction: "Order is cancelled. No further action required.",
+            blockerReason: "Order cancelled",
+          },
+        });
+
         return {
           orderId: order.id,
           internalStage: "CANCELLED",
