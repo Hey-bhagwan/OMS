@@ -498,7 +498,7 @@ export class WorkflowService {
         );
         if (activeShipment) {
           if (activeShipment.normalizedStatus === "DELIVERED") {
-            detectedStage = "DELIVERY";
+            detectedStage = "DELIVERED";
             nextActionDesc = "Delivered to recipient. Order fulfilled.";
           } else if (activeShipment.normalizedStatus === "DELIVERY_EXCEPTION") {
             detectedStage = "DELIVERY_EXCEPTION";
@@ -895,6 +895,95 @@ export class WorkflowService {
         });
       }
 
+      // If moved to DELIVERED, synchronize the active shipment record and order line completion
+      if (targetStage === "DELIVERED") {
+        const now = new Date();
+        const activeShipment = await tx.shipment.findFirst({
+          where: { orderId },
+          orderBy: { updatedAt: "desc" },
+        });
+
+        if (activeShipment) {
+          await tx.shipment.update({
+            where: { id: activeShipment.id },
+            data: {
+              normalizedStatus: "DELIVERED",
+              deliveredAt: activeShipment.deliveredAt || now,
+              currentScanActivity: "Delivered to recipient. Manually marked via OMS UI.",
+              currentScanLocation: activeShipment.currentScanLocation || "Destination Hub",
+            },
+          });
+
+          await tx.shipmentEvent.create({
+            data: {
+              shipmentId: activeShipment.id,
+              provider: activeShipment.provider,
+              awbWaybill: activeShipment.awbWaybill,
+              providerStatus: "DELIVERED",
+              activity: "Marked DELIVERED via Order Inspection",
+              location: activeShipment.currentScanLocation || "Destination Hub",
+              eventTimestamp: now,
+            },
+          }).catch(() => {});
+        } else {
+          // If no shipment exists yet (e.g. direct manual dispatch/delivery), create a manual delivered shipment
+          const manualAwb = `DEL-${order.uniwareOrderCode}`;
+          const newShipment = await tx.shipment.create({
+            data: {
+              orderId,
+              uniwareOrderCode: order.uniwareOrderCode,
+              provider: "MANUAL",
+              courierName: "Direct Delivery",
+              awbWaybill: manualAwb,
+              normalizedStatus: "DELIVERED",
+              dispatchedAt: now,
+              deliveredAt: now,
+              currentScanActivity: "Delivered to recipient. Direct fulfillment.",
+              matchConfidence: "MANUAL_OVERRIDE",
+            },
+          });
+
+          await tx.shipmentEvent.create({
+            data: {
+              shipmentId: newShipment.id,
+              provider: "MANUAL",
+              awbWaybill: manualAwb,
+              providerStatus: "DELIVERED",
+              activity: "Order marked delivered directly in OMS",
+              location: "Destination",
+              eventTimestamp: now,
+            },
+          }).catch(() => {});
+        }
+
+        // Clean up pending RM allocations and mark quantities fulfilled
+        await tx.orderLine.updateMany({
+          where: { orderId },
+          data: {
+            pendingAssessmentQty: 0,
+            blockedRawMaterialQty: 0,
+            requiredProductionQty: 0,
+            allocatedUnpackedQty: 0,
+          },
+        });
+
+        // Set packedCompletedQty to quantity for all lines of this order
+        await tx.$executeRawUnsafe(
+          `UPDATE "OrderLine" SET "allocatedPackedQty" = "quantity", "packedCompletedQty" = "quantity", "dispatchReadyQty" = "quantity" WHERE "orderId" = $1`,
+          orderId
+        );
+        await tx.rawMaterialBlock.updateMany({
+          where: {
+            orderId,
+            status: { in: ["PENDING_ASSESSMENT", "BLOCKED"] },
+          },
+          data: {
+            status: "RESOLVED",
+            resolvedAt: now,
+          },
+        });
+      }
+
       // If cancelled, release any reservations and cancel active work orders/blocks
       if (targetStage === "CANCELLED") {
         const orderWithLines = await tx.order.findUnique({
@@ -949,7 +1038,7 @@ export class WorkflowService {
       }
 
       return updated;
-    });
+    }, { timeout: 60000, maxWait: 15000 });
   }
 }
 

@@ -75,7 +75,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         await prisma.order.update({
           where: { id: shipment.orderId },
           data: {
-            internalStage: "DELIVERY",
+            internalStage: "DELIVERED",
+            priorityScore: 0,
+            priorityLabel: "LOW",
             nextAction: "Delivery verified. Order fulfilled.",
             blockerReason: null,
           },

@@ -111,6 +111,7 @@ export const OrdersView: React.FC<{
     loading,
     isBackgroundFetching,
     refetch: fetchOrders,
+    mutate: mutateOrders,
   } = useCachedFetch<any>("/api/orders?limit=5000&scope=all");
 
   const allOrders = (ordersData?.orders || []) as any[];
@@ -700,8 +701,30 @@ export const OrdersView: React.FC<{
         order={selectedOrder}
         loading={inspectLoading}
         onClose={() => setSelectedOrder(null)}
+        onOrderUpdate={(updated) => {
+          setSelectedOrder(updated);
+          // In-place patch the cached order list without full 5000-order re-fetch
+          mutateOrders((prev: any) => {
+            if (!prev || !prev.orders) return prev;
+            return {
+              ...prev,
+              orders: prev.orders.map((o: any) =>
+                o.id === updated.id
+                  ? {
+                      ...o,
+                      internalStage: updated.internalStage ?? o.internalStage,
+                      staffRemark: updated.staffRemark ?? o.staffRemark,
+                      rawMaterialDecision: updated.rawMaterialDecision ?? o.rawMaterialDecision,
+                      nextAction: updated.nextAction ?? o.nextAction,
+                      blockerReason: updated.blockerReason ?? o.blockerReason,
+                      shipments: updated.shipments ?? o.shipments,
+                    }
+                  : o
+              ),
+            };
+          }, false);
+        }}
         onRefresh={() => {
-          fetchOrders();
           if (selectedOrder) viewOrderDetails(selectedOrder.id);
         }}
       />

@@ -30,7 +30,7 @@ interface DashboardViewProps {
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToTab, onNavigateToOrder, searchFilter }) => {
-  const { data, loading, isBackgroundFetching, refetch } = useCachedFetch<any>("/api/dashboard/stats");
+  const { data, loading, isBackgroundFetching, refetch, mutate } = useCachedFetch<any>("/api/dashboard/stats");
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [inspectLoading, setInspectLoading] = useState(false);
   const [loadingOrderId, setLoadingOrderId] = useState<string | null>(null);
@@ -289,8 +289,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToTab, o
         order={selectedOrder}
         loading={inspectLoading}
         onClose={() => setSelectedOrder(null)}
+        onOrderUpdate={(updated) => {
+          setSelectedOrder(updated);
+        }}
         onRefresh={() => {
-          refetch(true);
           if (selectedOrder) viewOrderDetails(selectedOrder.id);
         }}
       />

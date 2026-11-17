@@ -10,9 +10,13 @@ import {
   Truck,
   ArrowRight,
   UserCheck,
+  Edit3,
+  Check,
+  Loader2,
 } from "lucide-react";
 import { formatShortDate, formatDate } from "@/lib/utils";
 import { getPriorityColorClasses } from "@/components/ui/PriorityOrderCode";
+import { invalidateCache } from "@/lib/useCachedFetch";
 
 export interface OrderInspectDrawerProps {
   orderId: string | null;
@@ -20,21 +24,54 @@ export interface OrderInspectDrawerProps {
   loading: boolean;
   onClose: () => void;
   onRefresh?: () => void;
+  onOrderUpdate?: (updatedOrder: any) => void;
   onNavigateToOrder?: (orderId: string) => void;
 }
 
 export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
   orderId,
-  order,
-  loading,
+  order: initialOrder,
+  loading: parentLoading,
   onClose,
   onRefresh,
+  onOrderUpdate,
 }) => {
+  // Local active order state to allow instant optimistic updates without parent re-render flashes
+  const [localOrder, setLocalOrder] = React.useState<any | null>(initialOrder);
+
+  // Synchronize when a new order is passed from parent
+  React.useEffect(() => {
+    setLocalOrder(initialOrder);
+  }, [initialOrder]);
+
+  const order = localOrder;
+  const loading = parentLoading && !order;
+
+  // Local helper to update order both locally and propagate up if handler provided
+  const updateOrderData = React.useCallback(
+    (updater: (prev: any) => any) => {
+      setLocalOrder((prev: any) => {
+        if (!prev) return prev;
+        const next = updater(prev);
+        if (onOrderUpdate) {
+          try {
+            onOrderUpdate(next);
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        return next;
+      });
+    },
+    [onOrderUpdate]
+  );
   // Local state for actions if drawer is active with full order
   const [newRemarkText, setNewRemarkText] = React.useState("");
   const [addingRemark, setAddingRemark] = React.useState(false);
   const [timelineFilter, setTimelineFilter] = React.useState<"ALL" | "REMARKS" | "STAGES">("ALL");
   const [isTransitioning, setIsTransitioning] = React.useState(false);
+  const [transitioningStage, setTransitioningStage] = React.useState<string | null>(null);
+  const [isReallocating, setIsReallocating] = React.useState(false);
   const [transitionMsg, setTransitionMsg] = React.useState<string | null>(null);
 
   // Manual raw-material decision state
@@ -50,6 +87,109 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
   const [handoverRemark, setHandoverRemark] = React.useState("");
   const [handoverSubmitting, setHandoverSubmitting] = React.useState(false);
 
+  // AWB editing inside drawer
+  const [isEditingAwb, setIsEditingAwb] = React.useState(false);
+  const [awbInput, setAwbInput] = React.useState("");
+  const [courierInput, setCourierInput] = React.useState("Blue Dart");
+  const [customCourierInput, setCustomCourierInput] = React.useState("");
+  const [awbRemarkInput, setAwbRemarkInput] = React.useState("");
+  const [savingAwb, setSavingAwb] = React.useState(false);
+
+  // Sync AWB fields when order loads or changes
+  const activeShipment = order?.shipments?.[0];
+  React.useEffect(() => {
+    if (activeShipment) {
+      setAwbInput(activeShipment.awbWaybill || "");
+      const stdCouriers = [
+        "Blue Dart",
+        "Delhivery",
+        "Shiprocket Cargo",
+        "DTDC",
+        "Ekart Logistics",
+        "Amazon Shipping",
+        "Shadowfax",
+        "Xpressbees",
+        "DHL Express (Export)",
+        "FedEx",
+      ];
+      if (stdCouriers.includes(activeShipment.courierName)) {
+        setCourierInput(activeShipment.courierName);
+        setCustomCourierInput("");
+      } else if (activeShipment.courierName) {
+        setCourierInput("OTHER");
+        setCustomCourierInput(activeShipment.courierName);
+      } else {
+        setCourierInput("Blue Dart");
+        setCustomCourierInput("");
+      }
+    } else {
+      setAwbInput("");
+      setCourierInput("Blue Dart");
+      setCustomCourierInput("");
+    }
+    setIsEditingAwb(false);
+  }, [order?.id, activeShipment?.awbWaybill, activeShipment?.courierName]);
+
+  const handleUpdateAwb = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!order) return;
+    const finalCourier = courierInput === "OTHER" ? customCourierInput.trim() : courierInput;
+    if (!awbInput.trim() || !finalCourier) {
+      setTransitionMsg("AWB number and Courier are required.");
+      return;
+    }
+
+    setSavingAwb(true);
+    try {
+      const res = await fetch(`/api/orders/${order.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          awbWaybill: awbInput.trim(),
+          courierName: finalCourier,
+          remark: awbRemarkInput.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTransitionMsg(`AWB successfully updated: ${awbInput.trim()} (${finalCourier})`);
+        setIsEditingAwb(false);
+        setAwbRemarkInput("");
+
+        // Optimistically update shipment & order inside the drawer
+        updateOrderData((prev) => {
+          const updatedShipment = data.shipment || {
+            awbWaybill: awbInput.trim(),
+            courierName: finalCourier,
+            normalizedStatus: prev.internalStage === "DELIVERED" ? "DELIVERED" : "PICKED_UP",
+          };
+          const existingShipments = prev.shipments || [];
+          const shipments = existingShipments.length > 0
+            ? [{ ...existingShipments[0], ...updatedShipment }, ...existingShipments.slice(1)]
+            : [updatedShipment];
+          return {
+            ...prev,
+            shipments,
+            nextAction: prev.internalStage === "DELIVERED"
+              ? "Delivered to recipient. Order fulfilled."
+              : `In transit via ${finalCourier} (AWB: ${awbInput.trim()})`,
+          };
+        });
+
+        invalidateCache("/api/delivery");
+        invalidateCache("/api/orders");
+        invalidateCache("/api/dashboard/stats");
+      } else {
+        setTransitionMsg(data.error || "Failed to update AWB");
+      }
+    } catch {
+      setTransitionMsg("Failed to send AWB update request");
+    } finally {
+      setSavingAwb(false);
+      setTimeout(() => setTransitionMsg(null), 5000);
+    }
+  };
+
   if (!orderId && !order) return null;
 
   const handleStageTransition = async (targetStage: string) => {
@@ -59,6 +199,7 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
       return;
     }
     setIsTransitioning(true);
+    setTransitioningStage(targetStage);
     try {
       const res = await fetch(`/api/orders/${order.id}/transition`, {
         method: "POST",
@@ -71,7 +212,44 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
       const data = await res.json();
       if (data.success) {
         setTransitionMsg(`Successfully moved to ${targetStage}`);
-        onRefresh?.();
+
+        // Optimistically update order state without triggering a full screen/table reload
+        updateOrderData((prev) => {
+          if (data.order) {
+            return {
+              ...prev,
+              ...data.order,
+              stageHistory: data.order.stageHistory || [
+                {
+                  id: "temp-" + Date.now(),
+                  fromStage: prev.internalStage,
+                  toStage: targetStage,
+                  reason: `Moved to ${targetStage}`,
+                  timestamp: new Date().toISOString(),
+                },
+                ...(prev.stageHistory || []),
+              ],
+            };
+          }
+          return {
+            ...prev,
+            internalStage: targetStage,
+            stageHistory: [
+              {
+                id: "temp-" + Date.now(),
+                fromStage: prev.internalStage,
+                toStage: targetStage,
+                reason: `Moved to ${targetStage}`,
+                timestamp: new Date().toISOString(),
+              },
+              ...(prev.stageHistory || []),
+            ],
+          };
+        });
+
+        invalidateCache("/api/dashboard/stats");
+        invalidateCache("/api/delivery");
+        invalidateCache("/api/orders");
       } else {
         setTransitionMsg(data.error || "Transition failed");
       }
@@ -79,6 +257,7 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
       setTransitionMsg("Request failed");
     } finally {
       setIsTransitioning(false);
+      setTransitioningStage(null);
       setTimeout(() => setTransitionMsg(null), 4000);
     }
   };
@@ -112,7 +291,34 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
         setHandoverAwb("");
         setCustomHandoverCourier("");
         setHandoverRemark("");
-        onRefresh?.();
+
+        // Optimistically advance order to DELIVERY
+        updateOrderData((prev) => {
+          const newShipment = data.shipment || {
+            courierName: finalCourier,
+            awbWaybill: handoverAwb.trim(),
+            normalizedStatus: "PICKED_UP",
+            currentScanActivity: "Handed over to carrier at warehouse dispatch dock",
+          };
+          const newHistory = {
+            id: "temp-" + Date.now(),
+            fromStage: prev.internalStage,
+            toStage: "DELIVERY",
+            reason: `Dispatched via ${finalCourier} (AWB: ${handoverAwb.trim()})`,
+            timestamp: new Date().toISOString(),
+          };
+          return {
+            ...prev,
+            internalStage: "DELIVERY",
+            nextAction: `In transit with ${finalCourier} (AWB: ${handoverAwb.trim()})`,
+            shipments: [newShipment, ...(prev.shipments || [])],
+            stageHistory: [newHistory, ...(prev.stageHistory || [])],
+          };
+        });
+
+        invalidateCache("/api/dashboard/stats");
+        invalidateCache("/api/delivery");
+        invalidateCache("/api/orders");
       } else {
         setTransitionMsg(data.error || "Failed to record handover");
       }
@@ -126,20 +332,26 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
 
   const handleReallocate = async () => {
     if (!order) return;
-    setIsTransitioning(true);
+    setIsReallocating(true);
     try {
       const res = await fetch(`/api/orders/${order.id}/allocate`, { method: "POST" });
       const data = await res.json();
       if (data.success) {
         setTransitionMsg("Stock reallocation completed");
-        onRefresh?.();
+        if (data.order) {
+          updateOrderData((prev) => ({
+            ...prev,
+            ...data.order,
+          }));
+        }
+        invalidateCache("/api/orders");
       } else {
         setTransitionMsg(data.error || "Allocation failed");
       }
     } catch {
       setTransitionMsg("Failed to allocate order");
     } finally {
-      setIsTransitioning(false);
+      setIsReallocating(false);
       setTimeout(() => setTransitionMsg(null), 4000);
     }
   };
@@ -147,18 +359,40 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
   const handleAddRemark = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!order || !newRemarkText.trim()) return;
+    const textToSubmit = newRemarkText.trim();
     setAddingRemark(true);
 
     try {
       const res = await fetch(`/api/orders/${order.id}/remark`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ remark: newRemarkText.trim() }),
+        body: JSON.stringify({ remark: textToSubmit }),
       });
       const data = await res.json();
       if (data.success) {
         setNewRemarkText("");
-        onRefresh?.();
+        // Optimistically update remarks and history without re-fetching entire order
+        updateOrderData((prev) => {
+          const newRemark = data.remark || {
+            id: "temp-" + Date.now(),
+            text: textToSubmit,
+            stage: prev.internalStage,
+            authorName: "Staff",
+            createdAt: new Date().toISOString(),
+          };
+          const newHistory = data.historyEntry || {
+            id: "temp-hist-" + Date.now(),
+            toStage: prev.internalStage,
+            reason: `[Remark]: ${textToSubmit}`,
+            timestamp: new Date().toISOString(),
+          };
+          return {
+            ...prev,
+            staffRemark: textToSubmit,
+            remarks: [newRemark, ...(prev.remarks || [])],
+            stageHistory: [newHistory, ...(prev.stageHistory || [])],
+          };
+        });
       }
     } catch (err) {
       console.error(err);
@@ -189,7 +423,13 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
         setTransitionMsg(`Raw material decision recorded: ${decision}`);
         setRmDecisionMode(null);
         setRmRemark("");
-        onRefresh?.();
+        updateOrderData((prev) => ({
+          ...prev,
+          rawMaterialDecision: decision,
+          ...(data.result?.order ? data.result.order : {}),
+        }));
+        invalidateCache("/api/raw-material/queue");
+        invalidateCache("/api/orders");
       } else {
         alert(data.error || "Decision failed");
       }
@@ -374,6 +614,142 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
                 </div>
               </div>
 
+              {/* Courier & AWB Tracking Card */}
+              <div className="p-3 bg-stone-50 border border-stone-200 rounded-lg text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-1.5 font-bold text-stone-900">
+                    <Truck className="w-4 h-4 text-[#a27b5c]" />
+                    <span>Courier &amp; AWB Information</span>
+                  </div>
+                  {!isEditingAwb ? (
+                    <button
+                      onClick={() => setIsEditingAwb(true)}
+                      className="px-2 py-1 text-[11px] font-medium text-[#a27b5c] bg-stone-100 hover:bg-stone-200 border border-stone-300 rounded flex items-center space-x-1 transition"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>{activeShipment ? "Edit AWB / Courier" : "Assign AWB"}</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setIsEditingAwb(false)}
+                      className="text-xs text-stone-500 hover:text-stone-700 font-medium"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+
+                {!isEditingAwb ? (
+                  activeShipment ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
+                      <div className="bg-white p-2 rounded border border-stone-200">
+                        <span className="text-[10px] text-stone-400 uppercase block font-semibold">AWB / Waybill</span>
+                        <span className="font-mono font-bold text-stone-900">{activeShipment.awbWaybill}</span>
+                      </div>
+                      <div className="bg-white p-2 rounded border border-stone-200">
+                        <span className="text-[10px] text-stone-400 uppercase block font-semibold">Courier Partner</span>
+                        <span className="font-medium text-stone-800">{activeShipment.courierName || "N/A"}</span>
+                      </div>
+                      <div className="bg-white p-2 rounded border border-stone-200">
+                        <span className="text-[10px] text-stone-400 uppercase block font-semibold">Shipment Status</span>
+                        <span className="font-bold text-blue-700">{activeShipment.normalizedStatus?.replace(/_/g, " ") || "N/A"}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-stone-500 text-[11px] italic pt-1">
+                      No courier or AWB assigned yet. Click &quot;Assign AWB&quot; to attach tracking details.
+                    </p>
+                  )
+                ) : (
+                  <form onSubmit={handleUpdateAwb} className="space-y-3 pt-2 border-t border-stone-200">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[11px] font-semibold text-stone-700 block mb-1">
+                          Courier Partner
+                        </label>
+                        <select
+                          value={courierInput}
+                          onChange={(e) => setCourierInput(e.target.value)}
+                          className="w-full px-2.5 py-1.5 text-xs border border-stone-300 rounded bg-white focus:ring-1 focus:ring-[#a27b5c]"
+                        >
+                          <option value="Blue Dart">Blue Dart</option>
+                          <option value="Delhivery">Delhivery</option>
+                          <option value="Shiprocket Cargo">Shiprocket Cargo</option>
+                          <option value="DTDC">DTDC</option>
+                          <option value="Ekart Logistics">Ekart Logistics</option>
+                          <option value="Amazon Shipping">Amazon Shipping</option>
+                          <option value="Shadowfax">Shadowfax</option>
+                          <option value="Xpressbees">Xpressbees</option>
+                          <option value="DHL Express (Export)">DHL Express (Export)</option>
+                          <option value="FedEx">FedEx</option>
+                          <option value="OTHER">+ Other Courier...</option>
+                        </select>
+                      </div>
+
+                      {courierInput === "OTHER" && (
+                        <div>
+                          <label className="text-[11px] font-semibold text-stone-700 block mb-1">
+                            Custom Courier Name
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={customCourierInput}
+                            onChange={(e) => setCustomCourierInput(e.target.value)}
+                            placeholder="e.g. V-Trans, TCI..."
+                            className="w-full px-2.5 py-1.5 text-xs border border-amber-300 bg-amber-50/20 rounded focus:ring-1 focus:ring-[#a27b5c]"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-stone-700 block mb-1">
+                          AWB / Waybill Number <span className="text-rose-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={awbInput}
+                          onChange={(e) => setAwbInput(e.target.value)}
+                          placeholder="e.g. BD987123498"
+                          className="w-full px-2.5 py-1.5 text-xs font-mono border border-stone-300 rounded bg-white focus:ring-1 focus:ring-[#a27b5c]"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-semibold text-stone-700 block mb-1">
+                        Update Note / Remark (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={awbRemarkInput}
+                        onChange={(e) => setAwbRemarkInput(e.target.value)}
+                        placeholder="e.g. Re-manifested with Blue Dart..."
+                        className="w-full px-2.5 py-1.5 text-xs border border-stone-300 rounded bg-white focus:ring-1 focus:ring-[#a27b5c]"
+                      />
+                    </div>
+
+                    <div className="flex justify-end space-x-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingAwb(false)}
+                        className="px-3 py-1 border border-stone-300 rounded text-stone-700 bg-white"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={savingAwb}
+                        className="px-3 py-1 bg-[#a27b5c] hover:bg-[#8a6549] text-white rounded font-semibold disabled:opacity-50"
+                      >
+                        {savingAwb ? "Saving..." : "Save AWB"}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+
               {/* Blocker & Next Action */}
               {order.blockerReason && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800 space-y-1">
@@ -446,23 +822,25 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
                     <button
                       onClick={() => handleRawMaterialDecision("AVAILABLE")}
                       disabled={rmSubmitting}
-                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded font-medium shadow-xs disabled:opacity-50"
+                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded font-medium shadow-xs disabled:opacity-50 flex items-center space-x-1.5 cursor-pointer disabled:cursor-not-allowed"
                     >
-                      Raw Material Available (Start Production)
+                      {rmSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      <span>Raw Material Available (Start Production)</span>
                     </button>
                     <button
                       onClick={() => setRmDecisionMode("UNAVAILABLE")}
                       disabled={rmSubmitting}
-                      className="px-3 py-1.5 bg-red-700 hover:bg-red-800 text-white rounded font-medium shadow-xs disabled:opacity-50"
+                      className="px-3 py-1.5 bg-red-700 hover:bg-red-800 text-white rounded font-medium shadow-xs disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                     >
                       Raw Material Unavailable (Queue as Blocked)
                     </button>
                     <button
                       onClick={() => handleRawMaterialDecision("PENDING_ASSESSMENT")}
                       disabled={rmSubmitting}
-                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded font-medium shadow-xs disabled:opacity-50"
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded font-medium shadow-xs disabled:opacity-50 flex items-center space-x-1.5 cursor-pointer disabled:cursor-not-allowed"
                     >
-                      Mark Pending Assessment
+                      {rmSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      <span>Mark Pending Assessment</span>
                     </button>
                   </div>
 
@@ -507,24 +885,35 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
                 <div className="flex flex-wrap gap-2">
                   {(order.internalStage === "RAW_MATERIAL" || order.internalStage === "PRODUCTION") && (
                     <button
-                      disabled={isTransitioning}
+                      disabled={isReallocating || isTransitioning}
                       onClick={handleReallocate}
-                      className="px-3 py-1.5 bg-[#a27b5c] text-white text-xs font-medium rounded hover:bg-[#8a6549] transition disabled:opacity-50"
+                      className="px-3 py-1.5 bg-[#a27b5c] text-white text-xs font-medium rounded hover:bg-[#8a6549] transition disabled:opacity-50 flex items-center space-x-1.5 cursor-pointer disabled:cursor-not-allowed"
                     >
-                      Re-run Stock Allocation
+                      {isReallocating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      <span>{isReallocating ? "Re-running..." : "Re-run Stock Allocation"}</span>
                     </button>
                   )}
 
-                  {getValidForwardStages(order.internalStage).map((st) => (
-                    <button
-                      key={st.stage}
-                      disabled={isTransitioning}
-                      onClick={() => handleStageTransition(st.stage)}
-                      className={`px-3 py-1.5 text-xs font-medium rounded transition ${st.color}`}
-                    >
-                      {st.label}
-                    </button>
-                  ))}
+                  {getValidForwardStages(order.internalStage).map((st) => {
+                    const isCurrentMoving = isTransitioning && transitioningStage === st.stage;
+                    return (
+                      <button
+                        key={st.stage}
+                        disabled={isTransitioning || isReallocating}
+                        onClick={() => handleStageTransition(st.stage)}
+                        className={`px-3 py-1.5 text-xs font-medium rounded transition flex items-center space-x-1.5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 shadow-xs ${st.color}`}
+                      >
+                        {isCurrentMoving ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Updating to {st.stage}...</span>
+                          </>
+                        ) : (
+                          <span>{st.label}</span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
