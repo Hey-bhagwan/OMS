@@ -205,6 +205,7 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
     searchFilter,
     dateSortExtractors: {
       etd: (s) => s.etd,
+      updatedAt: (s) => s.updatedAt || s.lastEventTime,
     },
     searchFields: [
       (s) => s.awb,
@@ -222,6 +223,10 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
       if (filters.etd && filters.etd.length > 0) {
         const etdStr = formatShortDate(s.etd);
         if (!filters.etd.includes(etdStr)) return false;
+      }
+      if (filters.updatedAt && filters.updatedAt.length > 0) {
+        const updStr = formatShortDate(s.updatedAt || s.lastEventTime);
+        if (!filters.updatedAt.includes(updStr)) return false;
       }
       return true;
     },
@@ -395,17 +400,35 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
                     />
                   </DateSortHeader>
                 </th>
+                <th className="py-2.5 px-4 whitespace-nowrap">
+                  <DateSortHeader
+                    title="Last Updated"
+                    columnId="updatedAt"
+                    currentSortColumn={sortColumn}
+                    currentSortDirection={sortDirection}
+                    onSortChange={toggleDateSort}
+                  >
+                    <ColumnFilter
+                      columnId="updatedAt"
+                      columnTitle="Last Updated"
+                      options={getDistinctValues("updatedAt", (s) => formatShortDate(s.updatedAt || s.lastEventTime))}
+                      selectedValues={columnFilters["updatedAt"] || []}
+                      onApply={(vals) => setColumnFilter("updatedAt", vals)}
+                      onClear={() => clearColumnFilter("updatedAt")}
+                    />
+                  </DateSortHeader>
+                </th>
                 <th className="py-2.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-stone-400">Loading tracking telemetry...</td>
+                  <td colSpan={9} className="py-12 text-center text-stone-400">Loading tracking telemetry...</td>
                 </tr>
               ) : paginatedShipments.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-stone-400">No shipments found in this category.</td>
+                  <td colSpan={9} className="py-12 text-center text-stone-400">No shipments found in this category.</td>
                 </tr>
               ) : (
                 paginatedShipments.map((s) => {
@@ -452,6 +475,14 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
                       </td>
                       <td className="py-2.5 px-4 text-stone-600 max-w-xs truncate">{s.lastActivity}</td>
                       <td className="py-2.5 px-4 text-stone-600">{formatShortDate(s.etd)}</td>
+                      <td className="py-2.5 px-4 text-stone-600 whitespace-nowrap">
+                        <div className="text-xs font-medium text-stone-800">
+                          {formatShortDate(s.updatedAt || s.lastEventTime)}
+                        </div>
+                        <div className="text-[10px] text-stone-400">
+                          {formatDate(s.updatedAt || s.lastEventTime, "HH:mm")}
+                        </div>
+                      </td>
                       <td className="py-2.5 px-4 text-right">
                         <div className="flex items-center justify-end space-x-1.5">
                           {!isDelivered ? (

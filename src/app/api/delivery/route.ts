@@ -88,6 +88,8 @@ export async function GET(req: NextRequest) {
         etd: s.etdDate,
         dispatchedAt: s.dispatchedAt,
         deliveredAt: s.deliveredAt,
+        updatedAt: s.updatedAt,
+        lastEventTime: s.events[0]?.eventTimestamp || s.updatedAt,
         isUnmatched: s.isUnmatched,
         events: s.events.map((e) => ({
           id: e.id,
