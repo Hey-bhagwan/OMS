@@ -93,6 +93,11 @@ export class ShipmentService {
             { displayOrderCode: parsed.providerOrderId },
           ],
         },
+        include: {
+          shipments: {
+            orderBy: { updatedAt: "desc" },
+          },
+        },
       });
 
       // If not found locally in DB, search and ingest directly from Unicommerce
@@ -100,7 +105,14 @@ export class ShipmentService {
         try {
           const syncedOrder = await uniwareSyncService.processUniwareOrder(parsed.providerOrderId);
           if (syncedOrder) {
-            order = syncedOrder;
+            order = await prisma.order.findUnique({
+              where: { id: syncedOrder.id },
+              include: {
+                shipments: {
+                  orderBy: { updatedAt: "desc" },
+                },
+              },
+            });
           }
         } catch (syncErr: unknown) {
           // Unicommerce lookup failed or order does not exist
@@ -108,6 +120,27 @@ export class ShipmentService {
       }
 
       if (order) {
+        // GUARD: Check if order already has an active, updated shipment with a DIFFERENT AWB.
+        // If the user manually updated or re-manifested the order with a new AWB, any late
+        // webhook mentioning the providerOrderId alongside the old/superseded AWB must be ignored.
+        const activeShipment = order.shipments?.find(
+          (s) => !s.awbWaybill.toUpperCase().startsWith("KOAL")
+        ) || order.shipments?.[0];
+
+        if (
+          activeShipment &&
+          activeShipment.awbWaybill &&
+          activeShipment.awbWaybill.trim().toLowerCase() !== parsed.awbWaybill.trim().toLowerCase()
+        ) {
+          console.warn(
+            `[ShipmentService] Ignoring webhook for superseded AWB "${parsed.awbWaybill}" (Order ${order.uniwareOrderCode}). Active AWB is "${activeShipment.awbWaybill}".`
+          );
+          return {
+            ignored: true,
+            reason: `Superseded AWB. Current active AWB is ${activeShipment.awbWaybill}`,
+          };
+        }
+
         matchedOrderId = order.id;
         matchConfidence = "ORDER_CODE_MATCH";
         isUnmatched = false;

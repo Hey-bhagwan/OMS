@@ -19,6 +19,40 @@ export const DispatchView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
+  const stdCouriers = [
+    "Blue Dart",
+    "Delhivery",
+    "Shiprocket Cargo",
+    "DTDC",
+    "Ekart Logistics",
+    "Amazon Shipping",
+    "Shadowfax",
+    "Xpressbees",
+    "DHL Express (Export)",
+    "FedEx",
+  ];
+
+  const handleOpenHandoverModal = (order: any) => {
+    setSelectedOrder(order);
+    const existingAwb = order.awb || "";
+    const existingCourier = order.courier || "";
+    setAwbWaybill(existingAwb);
+
+    if (existingCourier) {
+      if (stdCouriers.includes(existingCourier)) {
+        setCourierName(existingCourier);
+        setCustomCourierName("");
+      } else {
+        setCourierName("OTHER");
+        setCustomCourierName(existingCourier);
+      }
+    } else {
+      setCourierName("Blue Dart");
+      setCustomCourierName("");
+    }
+    setDispatchRemark("");
+  };
+
   const {
     data: dispatchData,
     loading,
@@ -301,7 +335,7 @@ export const DispatchView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
                     <td className="py-2.5 px-4 text-stone-600 max-w-xs">{o.nextAction}</td>
                     <td className="py-2.5 px-4 text-right">
                       <button
-                        onClick={() => setSelectedOrder(o)}
+                        onClick={() => handleOpenHandoverModal(o)}
                         className="px-3 py-1 bg-[#a27b5c] hover:bg-[#8a6549] text-white text-[11px] font-medium rounded transition"
                       >
                         Record Handover
@@ -351,9 +385,21 @@ export const DispatchView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
             <h3 className="text-sm font-bold text-stone-900">
               Confirm Carrier Handover: {selectedOrder.orderCode}
             </h3>
-            <p className="text-xs text-stone-500">
-              Enter courier partner and AWB/waybill tracking number to advance parcel to Delivery tracking.
-            </p>
+            {selectedOrder.awb ? (
+              <div className="p-2.5 bg-amber-50/70 border border-amber-200/80 rounded text-xs text-amber-900 space-y-1">
+                <div className="font-semibold flex items-center space-x-1.5 text-amber-800">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                  <span>Existing AWB detected</span>
+                </div>
+                <p className="text-[11px] text-amber-700">
+                  This parcel already has an assigned AWB. Please verify the courier partner and AWB number below, make any changes if needed, and confirm handover.
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-stone-500">
+                Enter courier partner and AWB/waybill tracking number to advance parcel to Delivery tracking.
+              </p>
+            )}
 
             <div>
               <label className="text-xs font-semibold text-stone-700 block mb-1">Courier / Shipping Partner</label>
