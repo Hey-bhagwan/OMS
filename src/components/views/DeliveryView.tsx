@@ -243,13 +243,12 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
 
         <div className="flex items-center space-x-2">
           <button
-            onClick={handleCheckAllNonDelivered}
-            disabled={checkingAll || nonDeliveredCount === 0}
-            title="Query carrier directly for real-time status of all non-delivered orders"
-            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-md transition shadow-xs disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed"
+            disabled
+            title="Carrier live status check is temporarily disabled"
+            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-stone-400 bg-stone-100 border border-stone-200 rounded-md transition cursor-not-allowed"
           >
-            <RefreshCw className={`w-3.5 h-3.5 text-white ${checkingAll ? "animate-spin" : ""}`} />
-            <span>{checkingAll ? "Checking Carrier..." : `Check Live Status (${nonDeliveredCount} Active)`}</span>
+            <RefreshCw className="w-3.5 h-3.5 text-stone-400" />
+            <span>Check Live Status (Disabled)</span>
           </button>
           <button
             onClick={handleReconcileUnmatched}
