@@ -284,6 +284,7 @@ export default function Home() {
           userName={user.name}
           userRole={user.role}
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
+          onNavigateToOrder={handleNavigateToOrder}
         />
 
         <main className="flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto">

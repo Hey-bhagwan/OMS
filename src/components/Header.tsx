@@ -4,7 +4,6 @@ import React, { useState, useEffect } from "react";
 import {
   Search,
   RefreshCw,
-
   CheckCircle2,
   ChevronDown,
   CalendarPlus,
@@ -16,8 +15,10 @@ import {
   AlertCircle,
   FileText,
   Menu,
+  ShieldAlert,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { NeedsAttentionDrawer, AttentionItem, SkippedNotification } from "./NeedsAttentionDrawer";
 
 interface HeaderProps {
   onSearchChange: (query: string) => void;
@@ -26,6 +27,7 @@ interface HeaderProps {
   userName?: string;
   userRole?: string;
   onOpenMobileMenu?: () => void;
+  onNavigateToOrder?: (orderId: string) => void;
 }
 
 type SyncMode = "CREATED" | "UPDATED";
@@ -54,6 +56,7 @@ export const Header: React.FC<HeaderProps> = ({
   userName,
   userRole,
   onOpenMobileMenu,
+  onNavigateToOrder,
 }) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [showSyncOptions, setShowSyncOptions] = useState(false);
@@ -67,7 +70,29 @@ export const Header: React.FC<HeaderProps> = ({
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
   const [syncModalData, setSyncModalData] = useState<SyncResultModalData | null>(null);
 
-  // Fetch initial last sync time
+  // Needs Attention state
+  const [isAttentionDrawerOpen, setIsAttentionDrawerOpen] = useState(false);
+  const [attentionItems, setAttentionItems] = useState<AttentionItem[]>([]);
+  const [attentionNotifications, setAttentionNotifications] = useState<SkippedNotification[]>([]);
+  const [attentionLoading, setAttentionLoading] = useState(false);
+
+  const fetchAttentionData = async () => {
+    try {
+      setAttentionLoading(true);
+      const res = await fetch("/api/attention");
+      const data = await res.json();
+      if (data.success) {
+        setAttentionItems(data.items || []);
+        setAttentionNotifications(data.notifications || []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setAttentionLoading(false);
+    }
+  };
+
+  // Fetch initial last sync time & attention items
   const fetchStatus = async () => {
     try {
       const res = await fetch("/api/integrations/status");
@@ -82,6 +107,10 @@ export const Header: React.FC<HeaderProps> = ({
 
   useEffect(() => {
     fetchStatus();
+    fetchAttentionData();
+    // Poll attention issues every 45s
+    const attentionTimer = setInterval(fetchAttentionData, 45000);
+    return () => clearInterval(attentionTimer);
   }, []);
 
   // Poll sync status when syncing is active
@@ -441,7 +470,32 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
-
+          {/* Needs Attention Button & Live Badge */}
+          <button
+            type="button"
+            onClick={() => {
+              fetchAttentionData();
+              setIsAttentionDrawerOpen(true);
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition shadow-xs ${
+              attentionItems.length > 0
+                ? "bg-amber-500/10 border-amber-300 text-amber-900 hover:bg-amber-500/20 animate-pulse"
+                : "bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100"
+            }`}
+            title="Open Needs Attention center"
+          >
+            <ShieldAlert className={`w-3.5 h-3.5 ${attentionItems.length > 0 ? "text-amber-600" : "text-stone-400"}`} />
+            <span className="hidden sm:inline">Needs Attention</span>
+            {attentionItems.length > 0 ? (
+              <span className="px-1.5 py-0.2 bg-amber-600 text-white rounded-full text-[10px] font-bold">
+                {attentionItems.length}
+              </span>
+            ) : (
+              <span className="px-1.5 py-0.2 bg-stone-200 text-stone-600 rounded-full text-[10px]">
+                0
+              </span>
+            )}
+          </button>
 
           {/* User */}
           <div className="flex items-center space-x-2 pl-2 border-l border-stone-200">
@@ -621,6 +675,17 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
       )}
+
+      {/* Needs Attention Drawer */}
+      <NeedsAttentionDrawer
+        isOpen={isAttentionDrawerOpen}
+        onClose={() => setIsAttentionDrawerOpen(false)}
+        items={attentionItems}
+        notifications={attentionNotifications}
+        loading={attentionLoading}
+        onRefresh={fetchAttentionData}
+        onNavigateToOrder={onNavigateToOrder}
+      />
     </>
   );
 };

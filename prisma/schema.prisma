@@ -334,6 +334,7 @@ model Order {
   rawMaterialBlocks   RawMaterialBlock[]
   remarks             OrderRemark[]
   workflowDecisions   WorkflowDecision[]
+  skippedAwbs         OrderAwbSkip[]
 
   @@index([uniwareOrderCode])
   @@index([internalStage])
@@ -455,6 +456,8 @@ model Shipment {
   dispatchedAt         DateTime?
   deliveredAt          DateTime?
   isUnmatched          Boolean                  @default(false)
+  isAwbMismatch        Boolean                  @default(false)
+  mismatchDetails      String?                  // JSON metadata: { recordedAwb, incomingAwb, courier, webhookReceiptId }
   matchConfidence      String?                  // EXACT_AWB, ORDER_CODE, MANUAL_OVERRIDE
   failureReason        String?
   createdAt            DateTime                 @default(now())
@@ -551,4 +554,18 @@ model SystemSetting {
   value       String
   description String?
   updatedAt   DateTime @updatedAt
+}
+
+model OrderAwbSkip {
+  id         String   @id @default(uuid())
+  orderId    String
+  awbWaybill String
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, awbWaybill])
+  @@index([orderId])
+  @@index([awbWaybill])
 }

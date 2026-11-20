@@ -97,6 +97,7 @@ export class ShipmentService {
           shipments: {
             orderBy: { updatedAt: "desc" },
           },
+          skippedAwbs: true,
         },
       });
 
@@ -111,6 +112,7 @@ export class ShipmentService {
                 shipments: {
                   orderBy: { updatedAt: "desc" },
                 },
+                skippedAwbs: true,
               },
             });
           }
@@ -120,25 +122,128 @@ export class ShipmentService {
       }
 
       if (order) {
-        // GUARD: Check if order already has an active, updated shipment with a DIFFERENT AWB.
-        // If the user manually updated or re-manifested the order with a new AWB, any late
-        // webhook mentioning the providerOrderId alongside the old/superseded AWB must be ignored.
+        const incomingAwb = parsed.awbWaybill.trim();
+
+        // 1. Check if incoming AWB is in the order's Skip List
+        const isSkipped = order.skippedAwbs?.some(
+          (skip) => skip.awbWaybill.trim().toLowerCase() === incomingAwb.toLowerCase()
+        );
+
+        if (isSkipped) {
+          console.log(
+            `[ShipmentService] AWB "${incomingAwb}" is in skip list for Order ${order.uniwareOrderCode} (${order.displayOrderCode}). Silently ignoring order update.`
+          );
+          // Update WebhookReceipt to reflect it was silently skipped
+          await prisma.webhookReceipt.updateMany({
+            where: { idempotencyKey: parsed.idempotencyKey },
+            data: {
+              status: "SKIPPED_SILENT",
+              errorMessage: `Silently ignored: AWB "${incomingAwb}" is on order skip list.`,
+            },
+          }).catch(() => {});
+
+          return {
+            ignored: true,
+            silent: true,
+            reason: `AWB ${incomingAwb} is in order skip list`,
+            orderCode: order.displayOrderCode || order.uniwareOrderCode,
+          };
+        }
+
+        // 2. Check current active shipment
         const activeShipment = order.shipments?.find(
           (s) => !s.awbWaybill.toUpperCase().startsWith("KOAL")
         ) || order.shipments?.[0];
 
+        const isTemporaryPlaceholder = (awb?: string | null) =>
+          Boolean(awb && /^KOAL\d+$/i.test(awb.trim()));
+
+        // If order already has an active AWB that is different from incoming
         if (
           activeShipment &&
           activeShipment.awbWaybill &&
-          activeShipment.awbWaybill.trim().toLowerCase() !== parsed.awbWaybill.trim().toLowerCase()
+          activeShipment.awbWaybill.trim().toLowerCase() !== incomingAwb.toLowerCase()
         ) {
-          console.warn(
-            `[ShipmentService] Ignoring webhook for superseded AWB "${parsed.awbWaybill}" (Order ${order.uniwareOrderCode}). Active AWB is "${activeShipment.awbWaybill}".`
-          );
-          return {
-            ignored: true,
-            reason: `Superseded AWB. Current active AWB is ${activeShipment.awbWaybill}`,
-          };
+          const existingRecordedAwb = activeShipment.awbWaybill.trim();
+
+          // If the recorded AWB is NOT a placeholder (e.g. KOAL), then this is a genuine AWB Mismatch!
+          if (!isTemporaryPlaceholder(existingRecordedAwb)) {
+            console.warn(
+              `[ShipmentService] AWB Mismatch for Order ${order.displayOrderCode || order.uniwareOrderCode}: Recorded AWB="${existingRecordedAwb}", Webhook AWB="${incomingAwb}". Flagging for user attention.`
+            );
+
+            // Update receipt status to AWB_MISMATCH
+            await prisma.webhookReceipt.updateMany({
+              where: { idempotencyKey: parsed.idempotencyKey },
+              data: {
+                status: "AWB_MISMATCH",
+                errorMessage: `AWB Mismatch: Order currently has "${existingRecordedAwb}", webhook has "${incomingAwb}".`,
+              },
+            }).catch(() => {});
+
+            // Upsert the shipment snapshot marked as unmatched mismatch so it is tracked and can be reconciled
+            const conflictDetails = JSON.stringify({
+              orderId: order.id,
+              orderCode: order.displayOrderCode || order.uniwareOrderCode,
+              recordedAwb: existingRecordedAwb,
+              recordedCourier: activeShipment.courierName,
+              incomingAwb,
+              incomingCourier: parsed.courierName,
+              incomingStatus: parsed.normalizedStatus,
+              activity: parsed.activityDescription,
+              location: parsed.scanLocation,
+              provider: parsed.provider,
+            });
+
+            await prisma.shipment.upsert({
+              where: {
+                provider_awbWaybill: {
+                  provider: parsed.provider,
+                  awbWaybill: parsed.awbWaybill,
+                },
+              },
+              update: {
+                providerShipmentId: parsed.providerShipmentId || undefined,
+                courierName: parsed.courierName,
+                normalizedStatus: parsed.normalizedStatus,
+                providerStatus: parsed.providerStatus,
+                currentScanLocation: parsed.scanLocation ?? undefined,
+                currentScanActivity: parsed.activityDescription ?? undefined,
+                etdDate: parsed.estimatedDeliveryDate || undefined,
+                isUnmatched: true,
+                isAwbMismatch: true,
+                mismatchDetails: conflictDetails,
+                matchConfidence: "AWB_MISMATCH",
+              },
+              create: {
+                provider: parsed.provider,
+                awbWaybill: parsed.awbWaybill,
+                providerShipmentId: parsed.providerShipmentId,
+                providerOrderId: parsed.providerOrderId,
+                courierName: parsed.courierName,
+                normalizedStatus: parsed.normalizedStatus,
+                providerStatus: parsed.providerStatus,
+                currentScanLocation: parsed.scanLocation,
+                currentScanActivity: parsed.activityDescription,
+                etdDate: parsed.estimatedDeliveryDate,
+                isUnmatched: true,
+                isAwbMismatch: true,
+                mismatchDetails: conflictDetails,
+                matchConfidence: "AWB_MISMATCH",
+              },
+            });
+
+            return {
+              mismatch: true,
+              needsAttention: true,
+              orderId: order.id,
+              orderCode: order.displayOrderCode || order.uniwareOrderCode,
+              recordedAwb: existingRecordedAwb,
+              incomingAwb,
+            };
+          }
+
+          // If it WAS a temporary placeholder (KOAL), we proceed to match and automatically clean up placeholder below!
         }
 
         matchedOrderId = order.id;
