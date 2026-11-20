@@ -486,17 +486,12 @@ export const DeliveryView: React.FC<{ searchFilter?: string; onNavigateToOrder?:
                         <div className="flex items-center justify-end space-x-1.5">
                           {!isDelivered ? (
                             <button
-                              onClick={(e) => handleCheckStatus(s.id, e)}
-                              disabled={checkingShipmentId === s.id}
-                              title="Fetch real-time delivery status directly from the carrier"
-                              className="px-2 py-1 text-[11px] font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded flex items-center space-x-1 transition disabled:opacity-60 cursor-pointer disabled:cursor-not-allowed"
+                              disabled
+                              title="Carrier status check is temporarily disabled"
+                              className="px-2 py-1 text-[11px] font-semibold bg-stone-100 text-stone-400 border border-stone-200 rounded flex items-center space-x-1 cursor-not-allowed"
                             >
-                              <RefreshCw
-                                className={`w-3 h-3 text-blue-600 ${
-                                  checkingShipmentId === s.id ? "animate-spin" : ""
-                                }`}
-                              />
-                              <span>{checkingShipmentId === s.id ? "Checking..." : "Check Status"}</span>
+                              <RefreshCw className="w-3 h-3 text-stone-400" />
+                              <span>Check Status</span>
                             </button>
                           ) : (
                             <span className="px-2 py-0.5 text-[10px] font-medium text-emerald-700 bg-emerald-50 rounded border border-emerald-200">
