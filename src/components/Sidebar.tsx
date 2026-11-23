@@ -100,24 +100,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
         `}
       >
         {/* Brand Header */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-[#3d2d23]">
+        <div className={`h-16 flex items-center border-b border-[#3d2d23] ${collapsed ? "justify-center px-1 gap-1" : "justify-between px-4"}`}>
           {!collapsed ? (
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 rounded bg-[#a27b5c] text-white flex items-center justify-center font-serif font-bold text-lg">
+            <div className="flex items-center space-x-2.5 min-w-0">
+              <div className="w-8 h-8 shrink-0 rounded bg-[#a27b5c] text-white flex items-center justify-center font-serif font-bold text-lg select-none">
                 K
               </div>
-              <div>
-                <span className="font-semibold text-stone-100 tracking-wide text-sm block">KOA LIVING</span>
-                <span className="text-[10px] text-stone-400 block tracking-wider uppercase">Order Management</span>
+              <div className="min-w-0 overflow-hidden">
+                <span className="font-semibold text-stone-100 tracking-wide text-sm block truncate">KOA LIVING</span>
+                <span className="text-[10px] text-stone-400 block tracking-wider uppercase truncate">Order Management</span>
               </div>
             </div>
           ) : (
-            <div className="w-8 h-8 mx-auto rounded bg-[#a27b5c] text-white flex items-center justify-center font-serif font-bold text-lg">
+            <div className="w-7 h-7 shrink-0 rounded bg-[#a27b5c] text-white flex items-center justify-center font-serif font-bold text-sm select-none">
               K
             </div>
           )}
           {/* Collapse button on desktop, close button on mobile */}
-          <div className="flex items-center">
+          <div className="flex items-center shrink-0">
             <button
               onClick={onCloseMobile}
               className="p-1.5 rounded hover:bg-[#3d2d23] text-stone-400 hover:text-white transition md:hidden"
@@ -127,10 +127,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
             <button
               onClick={onToggleCollapse}
-              className="hidden md:block p-1.5 rounded hover:bg-[#3d2d23] text-stone-400 hover:text-white transition"
+              className={`hidden md:flex items-center justify-center rounded hover:bg-[#3d2d23] text-stone-400 hover:text-white transition ${collapsed ? "p-1" : "p-1.5"}`}
               title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
-              {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+              {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-4 h-4" />}
             </button>
           </div>
         </div>
