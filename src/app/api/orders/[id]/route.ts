@@ -97,8 +97,36 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const existingShipment = order.shipments?.[0];
     const now = new Date();
 
+    // Check if an unmatched shipment for this AWB already exists (e.g. from an early webhook)
+    const existingUnmatchedShipment = await prisma.shipment.findFirst({
+      where: {
+        awbWaybill: trimmedAwb,
+        isUnmatched: true,
+      },
+    });
+
     let updatedShipment;
-    if (existingShipment) {
+    if (existingUnmatchedShipment) {
+      // Adopt the unmatched webhook shipment and link it to this order
+      updatedShipment = await prisma.shipment.update({
+        where: { id: existingUnmatchedShipment.id },
+        data: {
+          orderId: order.id,
+          uniwareOrderCode: order.uniwareOrderCode,
+          courierName: trimmedCourier || existingUnmatchedShipment.courierName,
+          isUnmatched: false,
+          isAwbMismatch: false,
+          matchConfidence: "MANUAL_ORDER_UPDATE",
+        },
+      });
+
+      // If the order previously had a placeholder or separate shipment, remove it to prevent duplicate rows
+      if (existingShipment && existingShipment.id !== existingUnmatchedShipment.id) {
+        await prisma.shipment.delete({
+          where: { id: existingShipment.id },
+        }).catch(() => {});
+      }
+    } else if (existingShipment) {
       updatedShipment = await prisma.shipment.update({
         where: { id: existingShipment.id },
         data: {
