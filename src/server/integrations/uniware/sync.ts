@@ -822,11 +822,34 @@ export class UniwareSyncService {
           });
 
           if (existingAnyProviderShipment) {
+            // Check status precedence: do not downgrade an existing advanced status (e.g. PICKED_UP / IN_TRANSIT / OUT_FOR_DELIVERY)
+            const STATUS_PRECEDENCE_MAP: Record<string, number> = {
+              SHIPMENT_CREATED: 10,
+              READY_FOR_PICKUP: 20,
+              PICKED_UP: 30,
+              IN_TRANSIT: 40,
+              OUT_FOR_DELIVERY: 50,
+              DELIVERY_EXCEPTION: 45,
+              UNDELIVERED: 46,
+              DELIVERED: 100,
+              RTO: 105,
+              RETURNED: 110,
+              CANCELLED: 90,
+              UNKNOWN: 0,
+            };
+
+            const existingPrecedence = STATUS_PRECEDENCE_MAP[existingAnyProviderShipment.normalizedStatus] || 0;
+            const newPrecedence = STATUS_PRECEDENCE_MAP[normalizedStatus] || 0;
+            const finalStatus = newPrecedence > existingPrecedence
+              ? normalizedStatus
+              : existingAnyProviderShipment.normalizedStatus;
+
             await prisma.shipment.update({
               where: { id: existingAnyProviderShipment.id },
               data: {
                 orderId: order.id,
                 uniwareOrderCode: order.uniwareOrderCode,
+                normalizedStatus: finalStatus,
                 isUnmatched: false,
                 matchConfidence: "EXACT_AWB",
                 courierName: existingAnyProviderShipment.courierName === "Shiprocket Cargo" || existingAnyProviderShipment.courierName === "Shiprocket Courier"

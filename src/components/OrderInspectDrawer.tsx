@@ -95,8 +95,24 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
   const [awbRemarkInput, setAwbRemarkInput] = React.useState("");
   const [savingAwb, setSavingAwb] = React.useState(false);
 
-  // Sync AWB fields when order loads or changes
-  const activeShipment = order?.shipments?.[0];
+  // Sort shipments so the most progressed/active shipment appears first
+  const activeShipment = React.useMemo(() => {
+    if (!order?.shipments || order.shipments.length === 0) return undefined;
+    const STATUS_WEIGHT: Record<string, number> = {
+      DELIVERED: 100,
+      OUT_FOR_DELIVERY: 50,
+      IN_TRANSIT: 40,
+      PICKED_UP: 30,
+      READY_FOR_PICKUP: 20,
+      SHIPMENT_CREATED: 10,
+    };
+    return [...order.shipments].sort((a, b) => {
+      const wa = STATUS_WEIGHT[a.normalizedStatus] || 0;
+      const wb = STATUS_WEIGHT[b.normalizedStatus] || 0;
+      if (wb !== wa) return wb - wa;
+      return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+    })[0];
+  }, [order?.shipments]);
   React.useEffect(() => {
     if (activeShipment) {
       setAwbInput(activeShipment.awbWaybill || "");
