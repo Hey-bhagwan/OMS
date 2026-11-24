@@ -172,7 +172,9 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
         setIsEditingAwb(false);
         setAwbRemarkInput("");
 
-        // Optimistically update shipment & order inside the drawer
+        // Optimistically update shipment & order inside the drawer.
+        // If the API advanced the stage from DISPATCH → DELIVERY, reflect that too
+        // so the action buttons immediately switch away from "Mark Handed Over to Courier".
         updateOrderData((prev) => {
           const updatedShipment = data.shipment || {
             awbWaybill: awbInput.trim(),
@@ -183,10 +185,13 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
           const shipments = existingShipments.length > 0
             ? [{ ...existingShipments[0], ...updatedShipment }, ...existingShipments.slice(1)]
             : [updatedShipment];
+          const PRE_DELIVERY_STAGES = new Set(["RAW_MATERIAL", "PRODUCTION", "PACKING", "DISPATCH"]);
+          const advancedStage = data.advancedToDelivery && PRE_DELIVERY_STAGES.has(prev.internalStage) ? "DELIVERY" : prev.internalStage;
           return {
             ...prev,
             shipments,
-            nextAction: prev.internalStage === "DELIVERED"
+            internalStage: advancedStage,
+            nextAction: advancedStage === "DELIVERED"
               ? "Delivered to recipient. Order fulfilled."
               : `In transit via ${finalCourier} (AWB: ${awbInput.trim()})`,
           };
@@ -195,6 +200,9 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
         invalidateCache("/api/delivery");
         invalidateCache("/api/orders");
         invalidateCache("/api/dashboard/stats");
+        if (data.advancedToDelivery) {
+          invalidateCache("/api/dispatch");
+        }
       } else {
         setTransitionMsg(data.error || "Failed to update AWB");
       }

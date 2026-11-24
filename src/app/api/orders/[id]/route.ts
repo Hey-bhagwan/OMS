@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db/prisma";
 import { getSessionUser } from "@/server/auth/session";
+import { STATUS_PRECEDENCE } from "@/server/integrations/shiprocket/parser";
+
+// Any shipment status at PICKED_UP or beyond means the parcel is physically with the courier.
+// Orders in these pre-delivery stages should be advanced to DELIVERY automatically.
+const PRE_DELIVERY_STAGES = new Set(["RAW_MATERIAL", "PRODUCTION", "PACKING", "DISPATCH"]);
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -164,22 +169,49 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       },
     }).catch(() => {});
 
-    // Update order nextAction
+    // Determine whether the order should be automatically advanced to DELIVERY.
+    //
+    // Rule: if the shipment that was just linked/updated already has a status of
+    // PICKED_UP or beyond (IN_TRANSIT, OUT_FOR_DELIVERY, etc.), the parcel is
+    // physically with the courier regardless of what internal stage the order is in
+    // (RAW_MATERIAL, PRODUCTION, PACKING, DISPATCH — any pre-delivery stage).
+    // We advance to DELIVERY so the order stops showing pre-courier action buttons.
+    const finalShipmentStatus = updatedShipment.normalizedStatus;
+    const shipmentIsWithCourier = STATUS_PRECEDENCE[finalShipmentStatus] >= STATUS_PRECEDENCE["PICKED_UP"];
+    const orderIsPreDelivery = PRE_DELIVERY_STAGES.has(order.internalStage);
+    const shouldAdvanceToDelivery = shipmentIsWithCourier && orderIsPreDelivery;
+    const newStage = shouldAdvanceToDelivery ? "DELIVERY" : order.internalStage;
+
+    // Update order stage and nextAction
     await prisma.order.update({
       where: { id: order.id },
       data: {
+        ...(shouldAdvanceToDelivery ? { internalStage: "DELIVERY" } : {}),
         nextAction: order.internalStage === "DELIVERED"
           ? "Delivered to recipient. Order fulfilled."
           : `In transit via ${trimmedCourier} (AWB: ${trimmedAwb})`,
       },
     });
 
+    // Record stage history whenever a pre-delivery order is auto-advanced to DELIVERY
+    if (shouldAdvanceToDelivery) {
+      await prisma.orderStatusHistory.create({
+        data: {
+          orderId: order.id,
+          fromStage: order.internalStage,
+          toStage: "DELIVERY",
+          reason: `AWB ${trimmedAwb} (${trimmedCourier}) already in "${finalShipmentStatus}" — stage auto-advanced to DELIVERY via manual AWB entry.`,
+          changedByUserId: user.id,
+        },
+      }).catch(() => {});
+    }
+
     if (remark && String(remark).trim()) {
       await prisma.orderRemark.create({
         data: {
           orderId: order.id,
           shipmentId: updatedShipment.id,
-          stage: order.internalStage,
+          stage: newStage,
           text: `AWB updated to ${trimmedAwb} (${trimmedCourier}). ${String(remark).trim()}`,
           authorName: user.name || "Staff",
           authorId: user.id,
@@ -188,7 +220,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       });
     }
 
-    return NextResponse.json({ success: true, shipment: updatedShipment });
+    return NextResponse.json({ success: true, shipment: updatedShipment, advancedToDelivery: shouldAdvanceToDelivery });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });
