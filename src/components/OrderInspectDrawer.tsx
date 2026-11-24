@@ -239,10 +239,19 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
 
         // Optimistically update order state without triggering a full screen/table reload
         updateOrderData((prev) => {
+          const updatedShipments = targetStage === "CANCELLED"
+            ? (prev.shipments || []).map((s: any) =>
+                ["SHIPMENT_CREATED", "READY_FOR_PICKUP"].includes(s.normalizedStatus)
+                  ? { ...s, normalizedStatus: "CANCELLED", currentScanActivity: "Shipment cancelled due to order cancellation" }
+                  : s
+              )
+            : prev.shipments;
+
           if (data.order) {
             return {
               ...prev,
               ...data.order,
+              shipments: data.order.shipments || updatedShipments,
               stageHistory: data.order.stageHistory || [
                 {
                   id: "temp-" + Date.now(),
@@ -258,6 +267,7 @@ export const OrderInspectDrawer: React.FC<OrderInspectDrawerProps> = ({
           return {
             ...prev,
             internalStage: targetStage,
+            shipments: updatedShipments,
             stageHistory: [
               {
                 id: "temp-" + Date.now(),

@@ -1035,6 +1035,43 @@ export class WorkflowService {
           where: { orderId, status: { in: ["BLOCKED", "PENDING_ASSESSMENT"] } },
           data: { status: "RESOLVED", resolvedAt: new Date() },
         });
+
+        // Cancel any pending shipments that have not been delivered or returned
+        const preTransitStatuses = ["SHIPMENT_CREATED", "READY_FOR_PICKUP"];
+        const shipmentsToCancel = await tx.shipment.findMany({
+          where: {
+            orderId,
+            normalizedStatus: { in: ["SHIPMENT_CREATED", "READY_FOR_PICKUP"] },
+          },
+        });
+
+        if (shipmentsToCancel.length > 0) {
+          const now = new Date();
+          await tx.shipment.updateMany({
+            where: {
+              orderId,
+              normalizedStatus: { in: ["SHIPMENT_CREATED", "READY_FOR_PICKUP"] },
+            },
+            data: {
+              normalizedStatus: "CANCELLED",
+              currentScanActivity: "Shipment cancelled due to order cancellation",
+            },
+          });
+
+          for (const s of shipmentsToCancel) {
+            await tx.shipmentEvent.create({
+              data: {
+                shipmentId: s.id,
+                provider: s.provider,
+                awbWaybill: s.awbWaybill,
+                providerStatus: "CANCELLED",
+                activity: "Shipment cancelled due to order cancellation",
+                location: s.currentScanLocation || "Warehouse Dispatch Hub",
+                eventTimestamp: now,
+              },
+            }).catch(() => {});
+          }
+        }
       }
 
       return updated;

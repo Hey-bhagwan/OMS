@@ -907,6 +907,24 @@ export class UniwareSyncService {
       await workflowService.allocateOrder(order.id);
     }
 
+    // If the order itself is CANCELLED (either in Uniware or manually in OMS),
+    // ensure any non-delivered/pre-transit shipments are also marked CANCELLED
+    // and never auto-advance this order back to DISPATCH or DELIVERY.
+    const isOrderCancelled = uniwareStatus === "CANCELLED" || existingOrder?.internalStage === "CANCELLED";
+    if (isOrderCancelled) {
+      await prisma.shipment.updateMany({
+        where: {
+          orderId: order.id,
+          normalizedStatus: { in: ["SHIPMENT_CREATED", "READY_FOR_PICKUP"] },
+        },
+        data: {
+          normalizedStatus: "CANCELLED",
+          currentScanActivity: "Shipment cancelled due to order cancellation",
+        },
+      });
+      return order;
+    }
+
     // Reconcile order stage against any Shipment record already linked to this order.
     // Covers the late-sync scenario: a webhook stored a shipment before this order was synced,
     // so the order got an initial stage (RAW_MATERIAL / PRODUCTION) that doesn't reflect
